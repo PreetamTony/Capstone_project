@@ -1,0 +1,11 @@
+2026-06-01 09:43:35.306 +05:30 [WRN] Sensitive data logging is enabled. Log entries and exception messages may include sensitive application data; this mode should only be enabled during development. {"EventId":{"Id":10400,"Name":"Microsoft.EntityFrameworkCore.Infrastructure.SensitiveDataLoggingEnabledWarning"},"SourceContext":"Microsoft.EntityFrameworkCore.Model.Validation"}
+2026-06-01 09:43:35.642 +05:30 [INF] Hospital Management API starting on  {}
+2026-06-01 10:00:34.956 +05:30 [WRN] Sensitive data logging is enabled. Log entries and exception messages may include sensitive application data; this mode should only be enabled during development. {"EventId":{"Id":10400,"Name":"Microsoft.EntityFrameworkCore.Infrastructure.SensitiveDataLoggingEnabledWarning"},"SourceContext":"Microsoft.EntityFrameworkCore.Model.Validation"}
+2026-06-01 10:00:35.268 +05:30 [INF] Hospital Management API starting on  {}
+2026-06-01 10:00:35.325 +05:30 [INF] Now listening on: http://localhost:5090 {"EventId":{"Id":14,"Name":"ListeningOnAddress"},"SourceContext":"Microsoft.Hosting.Lifetime"}
+2026-06-01 10:00:35.326 +05:30 [INF] Application started. Press Ctrl+C to shut down. {"SourceContext":"Microsoft.Hosting.Lifetime"}
+2026-06-01 10:00:35.329 +05:30 [INF] Hosting environment: Development {"SourceContext":"Microsoft.Hosting.Lifetime"}
+2026-06-01 10:00:35.329 +05:30 [INF] Content root path: /Users/preetamtonyj/Documents/Capstone Project/HospitalManagement.API {"SourceContext":"Microsoft.Hosting.Lifetime"}
+2026-06-01 10:00:48.404 +05:30 [WRN] Failed to determine the https port for redirect. {"EventId":{"Id":3,"Name":"FailedToDeterminePort"},"SourceContext":"Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionMiddleware","RequestId":"0HNLVIQ71UMVR:00000001","RequestPath":"/","ConnectionId":"0HNLVIQ71UMVR"}
+2026-06-01 10:00:48.423 +05:30 [INF] HTTP GET / responded 404 in 18.6950 ms {"SourceContext":"Serilog.AspNetCore.RequestLoggingMiddleware","RequestId":"0HNLVIQ71UMVR:00000001","ConnectionId":"0HNLVIQ71UMVR"}
+2026-06-01 14:25:23.491 +05:30 [INF] Application is shutting down... {"SourceContext":"Microsoft.Hosting.Lifetime"}

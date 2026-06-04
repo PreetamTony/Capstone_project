@@ -1,0 +1,2 @@
+2026-05-29 16:32:10.548 +05:30 [INF] HTTP GET /apple-touch-icon-precomposed.png responded 404 in 74.6020 ms {"SourceContext":"Serilog.AspNetCore.RequestLoggingMiddleware","RequestId":"0HNLRO4CKJ5T4:00000001","ConnectionId":"0HNLRO4CKJ5T4"}
+2026-05-29 16:32:10.799 +05:30 [INF] HTTP GET /apple-touch-icon.png responded 404 in 0.6369 ms {"SourceContext":"Serilog.AspNetCore.RequestLoggingMiddleware","RequestId":"0HNLRO4CKJ5T4:00000002","ConnectionId":"0HNLRO4CKJ5T4"}

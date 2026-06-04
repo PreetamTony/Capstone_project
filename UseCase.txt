@@ -1,0 +1,16 @@
+Objective:
+Develop a complete enterprise-grade application using layered architecture with
+PostgreSQL, ASP.NET Core Web API, and Angular frontend.
+Core Modules:
+• Doctor Management
+• Patient Registration
+• Appointment Booking
+• Prescription Management
+• Lab Reports Upload
+• Billing
+
+Key Features:
+• Push notifications for appointments
+• Azure Blob Storage for reports
+• Role-based access
+• JWT Authentication

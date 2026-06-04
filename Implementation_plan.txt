@@ -1,0 +1,17 @@
+1. DOCTOR MANAGEMENT
+
+Profile Management :
+    1)Add new doctor (admin only)
+    2)Edit doctor details (name, specialization, contact)
+    3)View doctor list with search/filter
+    4)Delete/Deactivate doctor 
+
+
+Patient Management :
+ 1) Fix an Appointment
+ 2)Then view available doctors
+ 3)Determine the time slot
+ 4)Upload past Medical history
+ 5)Can view the details of the prescribed medicine data.
+ 6) Billing
+ 7)can collect the lab reports
