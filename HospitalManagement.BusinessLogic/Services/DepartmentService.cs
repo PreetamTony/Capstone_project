@@ -3,8 +3,8 @@ using HospitalManagement.BusinessLogic.Services.Interfaces;
 using HospitalManagement.DataAccess.Exceptions;
 using HospitalManagement.DataAccess.Models;
 using HospitalManagement.DataAccess.Repositories;
+using HospitalManagement.DataAccess.Context;
 using Microsoft.EntityFrameworkCore;
-
 using Microsoft.Extensions.Caching.Distributed;
 using System.Text.Json;
 
@@ -13,12 +13,14 @@ namespace HospitalManagement.BusinessLogic.Services;
 public class DepartmentService : IDepartmentService
 {
     private readonly IUnitOfWork _uow;
+    private readonly AppDbContext _context;
     private readonly IDistributedCache _cache;
-    private const string CacheKey = "AllDepartments";
+    private const string CacheKey = "all_departments";
 
-    public DepartmentService(IUnitOfWork uow, IDistributedCache cache)
+    public DepartmentService(IUnitOfWork uow, AppDbContext context, IDistributedCache cache)
     {
         _uow = uow;
+        _context = context;
         _cache = cache;
     }
 
@@ -108,5 +110,62 @@ public class DepartmentService : IDepartmentService
         await _cache.RemoveAsync(CacheKey, ct);
         
         return true;
+    }
+
+    public async Task<List<DepartmentDoctorDto>> GetDepartmentDoctorsAsync(Guid id, CancellationToken ct = default)
+    {
+        var dept = await _uow.Departments.Query()
+            .Include(d => d.Doctors)
+            .FirstOrDefaultAsync(d => d.Id == id, ct)
+            ?? throw new NotFoundException("Department", id);
+
+        return dept.Doctors.Select(d => new DepartmentDoctorDto
+        {
+            DoctorId = d.Id,
+            Name = $"Dr. {d.FirstName} {d.LastName}",
+            Qualifications = d.Qualification,
+            IsHead = dept.HeadDoctorId == d.Id
+        }).ToList();
+    }
+
+    public async Task<DepartmentStatisticsDto> GetDepartmentStatisticsAsync(Guid id, CancellationToken ct = default)
+    {
+        var dept = await _uow.Departments.GetByIdAsync(id, ct)
+            ?? throw new NotFoundException("Department", id);
+
+        var totalDoctors = await _context.Doctors.CountAsync(d => d.DepartmentId == id, ct);
+        
+        var appointments = await _context.Appointments
+            .Include(a => a.Doctor)
+            .Where(a => a.Doctor.DepartmentId == id)
+            .ToListAsync(ct);
+            
+        var totalAppointments = appointments.Count;
+        
+        var billings = await _context.Invoices
+            .Where(b => b.Status == HospitalManagement.DataAccess.Models.Enums.Billing.InvoiceStatus.Paid && 
+                        appointments.Select(a => a.Id).Contains(b.VisitId))
+            .SumAsync(b => b.TotalAmount, ct);
+
+        return new DepartmentStatisticsDto
+        {
+            TotalDoctors = totalDoctors,
+            TotalAppointments = totalAppointments,
+            TotalRevenue = billings
+        };
+    }
+
+    public async Task AssignHeadDoctorAsync(Guid departmentId, Guid doctorId, CancellationToken ct = default)
+    {
+        var dept = await _uow.Departments.GetByIdAsync(departmentId, ct)
+            ?? throw new NotFoundException("Department", departmentId);
+
+        var doc = await _context.Doctors.FirstOrDefaultAsync(d => d.Id == doctorId && d.DepartmentId == departmentId, ct);
+        if (doc == null)
+            throw new BusinessRuleViolationException("InvalidDoctor", "The specified doctor does not belong to this department.");
+
+        dept.HeadDoctorId = doctorId;
+        _uow.Departments.Update(dept);
+        await _uow.CompleteAsync(ct);
     }
 }

@@ -15,4 +15,6 @@ public class EmrRecord : BaseEntity
     public ICollection<Allergy> Allergies { get; set; } = new List<Allergy>();
     public ICollection<MedicalHistory> MedicalHistories { get; set; } = new List<MedicalHistory>();
     public ICollection<Vitals> Vitals { get; set; } = new List<Vitals>();
+    public ICollection<Immunization> Immunizations { get; set; } = new List<Immunization>();
+    public ICollection<EmrDocument> Documents { get; set; } = new List<EmrDocument>();
 }

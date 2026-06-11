@@ -1,10 +1,10 @@
 using HospitalManagement.BusinessLogic.DTOs.Common;
 using HospitalManagement.BusinessLogic.DTOs.LabReport;
 using HospitalManagement.BusinessLogic.Services.Interfaces;
-using HospitalManagement.DataAccess.Constants;
+using HospitalManagement.DataAccess.Exceptions;
+using HospitalManagement.DataAccess.Interfaces;
 using HospitalManagement.DataAccess.Models;
 using HospitalManagement.DataAccess.Models.Enums;
-using HospitalManagement.DataAccess.Exceptions;
 using HospitalManagement.DataAccess.Repositories;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -12,111 +12,187 @@ using Microsoft.Extensions.Logging;
 
 namespace HospitalManagement.BusinessLogic.Services;
 
-/// <summary>
-/// Handles lab report file uploads to wwwroot/uploads/labreports and metadata persistence.
-/// </summary>
 public class LabReportService : ILabReportService
 {
     private readonly IUnitOfWork _uow;
-
-    private readonly INotificationService _notificationService;
     private readonly ILogger<LabReportService> _logger;
+    private readonly INotificationService _notificationService;
+    private readonly ICurrentUserService _currentUserService;
 
-    // Use absolute path for storage in development (capstone scope)
-    private readonly string _storagePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "lab-reports");
+    // Ideally configured in appsettings.json
+    private readonly string _uploadDirectory = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "lab-reports");
 
-    public LabReportService(IUnitOfWork uow, 
-        INotificationService notificationService, ILogger<LabReportService> logger)
+    public LabReportService(
+        IUnitOfWork uow, 
+        ILogger<LabReportService> logger, 
+        INotificationService notificationService,
+        ICurrentUserService currentUserService)
     {
         _uow = uow;
-        _notificationService = notificationService;
         _logger = logger;
+        _notificationService = notificationService;
+        _currentUserService = currentUserService;
+        
+        if (!Directory.Exists(_uploadDirectory))
+        {
+            Directory.CreateDirectory(_uploadDirectory);
+        }
     }
 
-    /// <inheritdoc/>
-    public async Task<LabReportResponseDto> UploadReportAsync(
-        Guid uploaderUserId, UploadLabReportRequestDto request, CancellationToken ct = default)
+    public async Task<LabReportResponseDto> CreateLabOrderAsync(Guid doctorUserId, CreateLabOrderRequestDto request, CancellationToken ct = default)
     {
-        // Validate file
-        var file = request.File;
-        if (file == null || file.Length == 0)
-            throw new BusinessRuleViolationException("EmptyFile", "No file was provided.");
+        var doctor = await _uow.Doctors.FirstOrDefaultAsync(d => d.UserId == doctorUserId, ct)
+            ?? throw new NotFoundException("Doctor profile not found.");
 
-        if (file.Length > AppConstants.File.MaxFileSizeBytes)
-            throw new BusinessRuleViolationException("FileTooLarge",
-                $"File size exceeds the maximum allowed size of {AppConstants.File.MaxFileSizeBytes / 1024 / 1024} MB.");
+        var consultation = await _uow.Consultations.Query()
+            .Include(c => c.Visit)
+            .FirstOrDefaultAsync(c => c.Id == request.ConsultationId, ct)
+            ?? throw new NotFoundException("Consultation", request.ConsultationId);
 
-        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (!AppConstants.File.AllowedExtensions.Contains(ext))
-            throw new BusinessRuleViolationException("InvalidFileType",
-                $"File type '{ext}' is not allowed. Allowed types: {string.Join(", ", AppConstants.File.AllowedExtensions)}");
+        if (consultation.DoctorId != doctor.Id)
+            throw new HospitalManagement.DataAccess.Exceptions.UnauthorizedAccessException("Only the assigned doctor can order tests for this consultation.");
 
-        // Validate entities exist
-        var patient = await _uow.Patients.GetByIdAsync(request.PatientId, ct)
-            ?? throw new NotFoundException("Patient", request.PatientId);
-
-        var doctor = await _uow.Doctors.GetByIdAsync(request.DoctorId, ct)
-            ?? throw new NotFoundException("Doctor", request.DoctorId);
-
-        // Save file
-        var uploadDir = AppConstants.File.LabReportUploadPath;
-        Directory.CreateDirectory(uploadDir);
-
-        var fileName = $"{Guid.NewGuid()}{ext}";
-        var filePath = Path.Combine(uploadDir, fileName);
-
-        await using (var stream = new FileStream(filePath, FileMode.Create))
+        var labOrder = new LabReport
         {
-            await file.CopyToAsync(stream, ct);
-        }
-
-        var report = new LabReport
-        {
-            PatientId = request.PatientId,
-            VisitId = request.VisitId,
-            DoctorId = request.DoctorId,
-            ReportName = request.ReportName,
-            ReportType = request.ReportType,
-            FilePath = filePath,
-            OriginalFileName = file.FileName,
-            FileSizeBytes = file.Length,
-            Observations = request.Observations,
-            Status = LabReportStatus.Pending,
+            OrderNumber = $"LAB-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString().Substring(0, 6).ToUpper()}",
+            ConsultationId = consultation.Id,
+            DoctorId = doctor.Id,
+            PatientId = consultation.Visit!.PatientId,
+            TestName = request.TestName,
+            Priority = request.Priority,
+            OrderNotes = request.Notes,
+            Status = LabReportStatus.Ordered,
             IsConfidential = request.IsConfidential,
-            UploadedBy = uploaderUserId
+            IsDeleted = false
         };
 
-        await _uow.LabReports.AddAsync(report, ct);
+        await _uow.LabReports.AddAsync(labOrder, ct);
         await _uow.CompleteAsync(ct);
 
+        _logger.LogInformation("Lab Order {OrderNumber} created by Doctor {DoctorId}", labOrder.OrderNumber, doctor.Id);
 
-        _logger.LogInformation("Lab report {Id} uploaded by {UserId} for patient {PatientId}",
-            report.Id, uploaderUserId, request.PatientId);
-
-        // Notify patient
-        await _notificationService.NotifyReportUploadedAsync(request.PatientId, report.Id, ct);
-
-        return MapToDto(report, patient, doctor);
+        return MapToDto(labOrder, consultation.Visit.Patient, doctor);
     }
 
-    /// <inheritdoc/>
-    public async Task<(byte[] Content, string ContentType, string FileName)> DownloadReportAsync(
-        Guid reportId, Guid requestingUserId, CancellationToken ct = default)
+    public async Task<LabReportResponseDto> UpdateOrderStatusAsync(Guid orderId, UpdateLabReportStatusDto request, CancellationToken ct = default)
     {
         var report = await _uow.LabReports.Query()
-            .Include(r => r.Patient)
-            .FirstOrDefaultAsync(r => r.Id == reportId, ct)
-            ?? throw new NotFoundException("Lab report", reportId);
+            .Include(l => l.Patient)
+            .Include(l => l.Doctor)
+            .FirstOrDefaultAsync(l => l.Id == orderId && !l.IsDeleted, ct)
+            ?? throw new NotFoundException("Lab Order", orderId);
 
-        // Confidential reports: only requesting patient or uploader can download
-        if (report.IsConfidential && report.Patient.UserId != requestingUserId && report.UploadedBy != requestingUserId)
-            throw new HospitalManagement.DataAccess.Exceptions.UnauthorizedAccessException("This report is confidential.");
+        if (!Enum.TryParse<LabReportStatus>(request.Status, true, out var newStatus))
+            throw new BusinessRuleViolationException("InvalidStatus", $"Status '{request.Status}' is not valid.");
 
-        if (!File.Exists(report.FilePath))
-            throw new NotFoundException($"Report file not found on disk for report {reportId}.");
+        report.Status = newStatus;
 
-        var content = await File.ReadAllBytesAsync(report.FilePath, ct);
-        var ext = Path.GetExtension(report.FilePath).ToLowerInvariant();
+        _uow.LabReports.Update(report);
+        await _uow.CompleteAsync(ct);
+
+        if (newStatus == LabReportStatus.Completed)
+        {
+            await _notificationService.NotifyReportUploadedAsync(report.PatientId, report.Id, ct);
+        }
+
+        return MapToDto(report, report.Patient, report.Doctor);
+    }
+
+    public async Task<LabReportResponseDto> UploadLabReportAsync(Guid reportId, Guid uploaderUserId, UploadLabReportRequestDto request, CancellationToken ct = default)
+    {
+        var report = await _uow.LabReports.Query()
+            .Include(l => l.Patient)
+            .Include(l => l.Doctor)
+            .FirstOrDefaultAsync(l => l.Id == reportId && !l.IsDeleted, ct)
+            ?? throw new NotFoundException("Lab Order", reportId);
+
+        if (request.File == null || request.File.Length == 0)
+            throw new BusinessRuleViolationException("InvalidFile", "A valid file must be provided.");
+
+        var originalFileName = request.File.FileName;
+        var extension = Path.GetExtension(originalFileName);
+        var safeFileName = $"{Guid.NewGuid()}{extension}";
+        var fullPath = Path.Combine(_uploadDirectory, safeFileName);
+
+        using (var stream = new FileStream(fullPath, FileMode.Create))
+        {
+            await request.File.CopyToAsync(stream, ct);
+        }
+
+        report.ReportName = request.ReportName;
+        report.ReportType = request.ReportType;
+        report.Observations = request.Observations;
+        report.FilePath = safeFileName;
+        report.OriginalFileName = originalFileName;
+        report.FileSizeBytes = request.File.Length;
+        report.UploadedBy = uploaderUserId;
+        report.Status = LabReportStatus.Completed; // Automatically complete on upload
+
+        _uow.LabReports.Update(report);
+        await _uow.CompleteAsync(ct);
+
+        await _notificationService.NotifyReportUploadedAsync(report.PatientId, report.Id, ct);
+
+        return MapToDto(report, report.Patient, report.Doctor);
+    }
+
+    public async Task<LabReportResponseDto> ReviewLabReportAsync(Guid reportId, Guid reviewerUserId, ReviewLabReportDto request, CancellationToken ct = default)
+    {
+        var report = await _uow.LabReports.Query()
+            .Include(l => l.Patient)
+            .Include(l => l.Doctor)
+            .FirstOrDefaultAsync(l => l.Id == reportId && !l.IsDeleted, ct)
+            ?? throw new NotFoundException("Lab Report", reportId);
+
+        if (report.Doctor.UserId != reviewerUserId)
+            throw new HospitalManagement.DataAccess.Exceptions.UnauthorizedAccessException("Only the assigned doctor can review this lab report.");
+
+        if (report.Status != LabReportStatus.Completed && report.Status != LabReportStatus.Reviewed)
+            throw new BusinessRuleViolationException("InvalidStatus", "Cannot review a report that is not Completed.");
+
+        report.ReviewNotes = request.Notes;
+        report.Status = LabReportStatus.Reviewed;
+
+        _uow.LabReports.Update(report);
+        await _uow.CompleteAsync(ct);
+
+        return MapToDto(report, report.Patient, report.Doctor);
+    }
+
+    public async Task<LabReportResponseDto> GetByIdAsync(Guid id, Guid currentUserId, CancellationToken ct = default)
+    {
+        var report = await _uow.LabReports.Query()
+            .Include(l => l.Patient)
+            .Include(l => l.Doctor)
+            .FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted, ct)
+            ?? throw new NotFoundException("LabReport", id);
+
+        CheckConfidentiality(report, currentUserId);
+
+        return MapToDto(report, report.Patient, report.Doctor);
+    }
+
+    public async Task<(byte[] fileBytes, string contentType, string fileName)> DownloadReportAsync(Guid id, Guid currentUserId, CancellationToken ct = default)
+    {
+        var report = await _uow.LabReports.Query()
+            .Include(l => l.Patient)
+            .Include(l => l.Doctor)
+            .FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted, ct)
+            ?? throw new NotFoundException("LabReport", id);
+
+        CheckConfidentiality(report, currentUserId);
+
+        if (string.IsNullOrEmpty(report.FilePath))
+            throw new BusinessRuleViolationException("FileNotFound", "No file is attached to this report.");
+
+        var fullPath = Path.Combine(_uploadDirectory, report.FilePath);
+
+        if (!File.Exists(fullPath))
+            throw new NotFoundException("File", report.FilePath);
+
+        var bytes = await File.ReadAllBytesAsync(fullPath, ct);
+        
+        var ext = Path.GetExtension(report.OriginalFileName ?? "").ToLowerInvariant();
         var contentType = ext switch
         {
             ".pdf" => "application/pdf",
@@ -125,84 +201,139 @@ public class LabReportService : ILabReportService
             _ => "application/octet-stream"
         };
 
-        return (content, contentType, report.OriginalFileName ?? Path.GetFileName(report.FilePath));
+        return (bytes, contentType, report.OriginalFileName ?? report.FilePath);
     }
 
-    /// <inheritdoc/>
-    public async Task<PagedResult<LabReportResponseDto>> GetPatientReportsAsync(
-        Guid patientId, PaginationFilter filter, CancellationToken ct = default)
+    public async Task<PagedResult<LabReportResponseDto>> GetPatientReportsAsync(Guid patientUserId, PaginationFilter filter, CancellationToken ct = default)
     {
+        var patient = await _uow.Patients.FirstOrDefaultAsync(p => p.UserId == patientUserId, ct)
+            ?? throw new NotFoundException("Patient profile not found.");
+
         var query = _uow.LabReports.Query()
-            .Where(r => r.PatientId == patientId)
-            .Include(r => r.Patient)
-            .Include(r => r.Doctor)
-            .AsQueryable();
+            .Include(l => l.Patient)
+            .Include(l => l.Doctor)
+            .Where(l => l.PatientId == patient.Id && !l.IsDeleted);
 
-        if (!string.IsNullOrWhiteSpace(filter.SearchTerm))
-            query = query.Where(r => r.ReportName.Contains(filter.SearchTerm) || r.ReportType.Contains(filter.SearchTerm));
+        var totalCount = await query.CountAsync(ct);
 
-        var total = await query.CountAsync(ct);
         var items = await query
-            .OrderByDescending(r => r.CreatedAt)
+            .OrderByDescending(l => l.CreatedAt)
             .Skip((filter.PageNumber - 1) * filter.PageSize)
             .Take(filter.PageSize)
             .ToListAsync(ct);
 
-        return PagedResult<LabReportResponseDto>.Create(
-            items.Select(r => MapToDto(r, r.Patient, r.Doctor)).ToList(),
-            total, filter.PageNumber, filter.PageSize);
+        var dtos = items.Select(i => MapToDto(i, i.Patient, i.Doctor)).ToList();
+
+        return PagedResult<LabReportResponseDto>.Create(dtos, totalCount, filter.PageNumber, filter.PageSize);
     }
 
-    /// <inheritdoc/>
-    public async Task<LabReportResponseDto> UpdateStatusAsync(Guid reportId, string status, CancellationToken ct = default)
+    public async Task<PagedResult<LabReportResponseDto>> GetDoctorReportsAsync(Guid doctorUserId, PaginationFilter filter, CancellationToken ct = default)
     {
-        var report = await _uow.LabReports.Query()
-            .Include(r => r.Patient)
-            .Include(r => r.Doctor)
-            .FirstOrDefaultAsync(r => r.Id == reportId, ct)
-            ?? throw new NotFoundException("Lab report", reportId);
+        var doctor = await _uow.Doctors.FirstOrDefaultAsync(d => d.UserId == doctorUserId, ct)
+            ?? throw new NotFoundException("Doctor profile not found.");
 
-        if (!Enum.TryParse<LabReportStatus>(status, true, out var newStatus))
-            throw new BusinessRuleViolationException("InvalidStatus", $"Invalid lab report status: {status}");
+        var query = _uow.LabReports.Query()
+            .Include(l => l.Patient)
+            .Include(l => l.Doctor)
+            .Where(l => l.DoctorId == doctor.Id && !l.IsDeleted);
 
-        report.Status = newStatus;
+        var totalCount = await query.CountAsync(ct);
+
+        var items = await query
+            .OrderByDescending(l => l.CreatedAt)
+            .Skip((filter.PageNumber - 1) * filter.PageSize)
+            .Take(filter.PageSize)
+            .ToListAsync(ct);
+
+        var dtos = items.Select(i => MapToDto(i, i.Patient, i.Doctor)).ToList();
+
+        return PagedResult<LabReportResponseDto>.Create(dtos, totalCount, filter.PageNumber, filter.PageSize);
+    }
+
+    public async Task<List<LabReportResponseDto>> GetConsultationReportsAsync(Guid consultationId, Guid currentUserId, CancellationToken ct = default)
+    {
+        var reports = await _uow.LabReports.Query()
+            .Include(l => l.Patient)
+            .Include(l => l.Doctor)
+            .Where(l => l.ConsultationId == consultationId && !l.IsDeleted)
+            .ToListAsync(ct);
+
+        var accessibleReports = new List<LabReportResponseDto>();
+        var isAdmin = _currentUserService.Role == HospitalManagement.DataAccess.Constants.AppConstants.Roles.Admin;
+
+        foreach (var report in reports)
+        {
+            if (report.IsConfidential && !isAdmin && report.Patient.UserId != currentUserId && report.Doctor.UserId != currentUserId)
+            {
+                continue; // Skip instead of throwing, so we return what they are allowed to see
+            }
+            accessibleReports.Add(MapToDto(report, report.Patient, report.Doctor));
+        }
+
+        return accessibleReports;
+    }
+
+    public async Task DeleteLabReportAsync(Guid id, CancellationToken ct = default)
+    {
+        var report = await _uow.LabReports.GetByIdAsync(id, ct)
+            ?? throw new NotFoundException("LabReport", id);
+
+        report.IsDeleted = true;
+        report.DeletedAt = DateTime.UtcNow;
+
         _uow.LabReports.Update(report);
         await _uow.CompleteAsync(ct);
-
-        // Notify patient
-        await _notificationService.NotifyReportUploadedAsync(report.Patient.Id, report.Id, ct);
-
-        return MapToDto(report, report.Patient, report.Doctor);
     }
 
-    /// <inheritdoc/>
-    public async Task<LabReportResponseDto> GetByIdAsync(Guid reportId, CancellationToken ct = default)
+    public async Task<LabReportStatisticsDto> GetStatisticsAsync(CancellationToken ct = default)
     {
-        var report = await _uow.LabReports.Query()
-            .Include(r => r.Patient)
-            .Include(r => r.Doctor)
-            .FirstOrDefaultAsync(r => r.Id == reportId, ct)
-            ?? throw new NotFoundException("Lab report", reportId);
+        var reports = await _uow.LabReports.Query().Where(l => !l.IsDeleted).ToListAsync(ct);
 
-        return MapToDto(report, report.Patient, report.Doctor);
+        return new LabReportStatisticsDto
+        {
+            TotalReports = reports.Count,
+            PendingReports = reports.Count(r => r.Status == LabReportStatus.Ordered || r.Status == LabReportStatus.SampleCollected || r.Status == LabReportStatus.InProgress),
+            CompletedReports = reports.Count(r => r.Status == LabReportStatus.Completed),
+            ReviewedReports = reports.Count(r => r.Status == LabReportStatus.Reviewed)
+        };
     }
 
-    private static LabReportResponseDto MapToDto(LabReport r, Patient p, Doctor d)
-        => new()
+    private void CheckConfidentiality(LabReport report, Guid currentUserId)
+    {
+        if (!report.IsConfidential) return;
+
+        var isAdmin = _currentUserService.Role == HospitalManagement.DataAccess.Constants.AppConstants.Roles.Admin;
+        if (isAdmin) return;
+
+        if (report.Patient.UserId == currentUserId || report.Doctor.UserId == currentUserId)
+            return;
+
+        throw new HospitalManagement.DataAccess.Exceptions.UnauthorizedAccessException("This lab report is marked as confidential and you do not have permission to access it.");
+    }
+
+    private LabReportResponseDto MapToDto(LabReport report, Patient patient, Doctor doctor)
+    {
+        return new LabReportResponseDto
         {
-            Id = r.Id,
-            PatientId = p.Id,
-            PatientName = $"{p.FirstName} {p.LastName}",
-            VisitId = r.VisitId,
-            DoctorId = d.Id,
-            DoctorName = $"Dr. {d.FirstName} {d.LastName}",
-            ReportName = r.ReportName,
-            ReportType = r.ReportType,
-            Observations = r.Observations,
-            Status = r.Status.ToString(),
-            IsConfidential = r.IsConfidential,
-            OriginalFileName = r.OriginalFileName,
-            FileSizeBytes = r.FileSizeBytes,
-            CreatedAt = r.CreatedAt
+            Id = report.Id,
+            OrderNumber = report.OrderNumber,
+            PatientId = report.PatientId,
+            PatientName = $"{patient.FirstName} {patient.LastName}",
+            ConsultationId = report.ConsultationId,
+            DoctorId = report.DoctorId,
+            DoctorName = $"Dr. {doctor.FirstName} {doctor.LastName}",
+            TestName = report.TestName,
+            Priority = report.Priority,
+            OrderNotes = report.OrderNotes,
+            ReviewNotes = report.ReviewNotes,
+            ReportName = report.ReportName,
+            ReportType = report.ReportType,
+            Observations = report.Observations,
+            Status = report.Status.ToString(),
+            IsConfidential = report.IsConfidential,
+            OriginalFileName = report.OriginalFileName,
+            FileSizeBytes = report.FileSizeBytes,
+            CreatedAt = report.CreatedAt
         };
+    }
 }

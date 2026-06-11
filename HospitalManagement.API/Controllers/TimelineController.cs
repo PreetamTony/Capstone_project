@@ -57,7 +57,7 @@ public class TimelineController : ControllerBase
                 Date = p.CreatedAt,
                 EventType = "Prescription",
                 Title = "Prescription Issued",
-                Description = $"Prescribed {p.MedicationName}",
+                Description = $"Prescribed {p.Items.Count} medication(s)",
                 ReferenceId = p.Id
             }).ToListAsync(ct);
 
@@ -74,14 +74,14 @@ public class TimelineController : ControllerBase
             }).ToListAsync(ct);
 
         // 5. Bills
-        var bills = await _uow.Bills.Query()
+        var bills = await _uow.Invoices.Query()
             .Where(b => b.PatientId == patientId)
             .Select(b => new PatientTimelineItemDto
             {
                 Date = b.CreatedAt,
-                EventType = "Bill",
-                Title = "Bill Generated",
-                Description = $"Amount: {b.Amount}, Status: {b.Status}",
+                EventType = "Invoice",
+                Title = "Invoice Generated",
+                Description = $"Amount: {b.TotalAmount}, Status: {b.Status}",
                 ReferenceId = b.Id
             }).ToListAsync(ct);
 

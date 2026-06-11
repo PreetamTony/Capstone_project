@@ -1,10 +1,8 @@
-using HospitalManagement.BusinessLogic.Hubs;
 using HospitalManagement.BusinessLogic.DTOs.Chat;
 using HospitalManagement.BusinessLogic.Services.Interfaces;
 using HospitalManagement.DataAccess.Exceptions;
 using HospitalManagement.DataAccess.Models;
 using HospitalManagement.DataAccess.Repositories;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace HospitalManagement.BusinessLogic.Services;
@@ -12,12 +10,12 @@ namespace HospitalManagement.BusinessLogic.Services;
 public class ChatService : IChatService
 {
     private readonly IUnitOfWork _uow;
-    private readonly IHubContext<ChatHub> _chatHub;
+    private readonly IChatHubDispatcher _chatDispatcher;
 
-    public ChatService(IUnitOfWork uow, IHubContext<ChatHub> chatHub)
+    public ChatService(IUnitOfWork uow, IChatHubDispatcher chatDispatcher)
     {
         _uow = uow;
-        _chatHub = chatHub;
+        _chatDispatcher = chatDispatcher;
     }
 
     public async Task<ChatMessageDto> SendMessageAsync(Guid senderId, SendMessageRequestDto request, CancellationToken ct = default)
@@ -50,7 +48,7 @@ public class ChatService : IChatService
         };
 
         // Broadcast to the specific receiver user
-        await _chatHub.Clients.User(receiver.Id.ToString()).SendAsync("ReceiveMessage", dto, ct);
+        await _chatDispatcher.SendMessageAsync(receiver.Id, dto, ct);
 
         return dto;
     }

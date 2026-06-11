@@ -86,10 +86,19 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<DateTime>("AppointmentTime")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("BookedByRole")
+                        .HasColumnType("text");
+
                     b.Property<string>("CancellationReason")
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid?>("CancelledBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CheckInByUserId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime?>("CheckedInAt")
@@ -98,8 +107,17 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("ConfirmationSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConsultationRoom")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
@@ -116,8 +134,24 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsTeleConsultation")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastNotificationSentAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("LateCancellationPenalty")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("MeetingProvider")
+                        .HasColumnType("text");
+
+                    b.Property<string>("MeetingUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
 
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid");
@@ -126,6 +160,9 @@ namespace HospitalManagement.DataAccess.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int?>("QueueNumber")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Reason")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -133,6 +170,22 @@ namespace HospitalManagement.DataAccess.Migrations
 
                     b.Property<bool>("ReminderSent")
                         .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("ReminderSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReminderStatus")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("RescheduledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("RescheduledByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -150,11 +203,15 @@ namespace HospitalManagement.DataAccess.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("PatientId");
+                    b.HasIndex("QueueNumber");
+
+                    b.HasIndex("Status");
 
                     b.HasIndex("DoctorId", "AppointmentTime")
                         .IsUnique()
                         .HasFilter("\"IsDeleted\" = false");
+
+                    b.HasIndex("PatientId", "AppointmentTime");
 
                     b.ToTable("Appointments");
                 });
@@ -276,17 +333,15 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.ToTable("Beds");
                 });
 
-            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Billing", b =>
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Billing.BillingAudit", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<int>("Category")
-                        .HasColumnType("integer");
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -297,8 +352,123 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<Guid?>("DeletedBy")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("NewValue")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PreviousValue")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EntityId");
+
+                    b.ToTable("BillingAudits");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Billing.InsuranceClaim", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("ApprovedAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("ClaimNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("InsuranceProvider")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RejectionReason")
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("RequestedAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvoiceId");
+
+                    b.ToTable("InsuranceClaims");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Billing.Invoice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("DoctorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("DueDate")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<decimal>("InsuranceCoverage")
-                        .HasColumnType("decimal(10,2)");
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("InvoiceNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
@@ -309,21 +479,24 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("PatientId1")
+                        .HasColumnType("uuid");
+
                     b.Property<decimal>("PatientResponsibility")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<DateTime?>("PaymentDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("PaymentMethod")
-                        .HasColumnType("text");
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("TransactionId")
-                        .HasColumnType("text");
+                    b.Property<decimal>("Subtotal")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -333,12 +506,156 @@ namespace HospitalManagement.DataAccess.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("PatientId");
+                    b.HasIndex("DoctorId");
 
-                    b.HasIndex("VisitId")
+                    b.HasIndex("InvoiceNumber")
                         .IsUnique();
 
-                    b.ToTable("Billings");
+                    b.HasIndex("PatientId");
+
+                    b.HasIndex("PatientId1");
+
+                    b.HasIndex("VisitId");
+
+                    b.ToTable("Invoices");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Billing.InvoiceItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ItemType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvoiceId");
+
+                    b.ToTable("InvoiceItems");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Billing.Payment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("PaidAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PaymentMethod")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("TransactionId")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvoiceId");
+
+                    b.ToTable("Payments");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Billing.Refund", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("PaymentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvoiceId");
+
+                    b.HasIndex("PaymentId");
+
+                    b.ToTable("Refunds");
                 });
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.BlockedSlot", b =>
@@ -438,6 +755,17 @@ namespace HospitalManagement.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Assessment")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ChiefComplaint")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -448,6 +776,20 @@ namespace HospitalManagement.DataAccess.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("Diagnosis")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("DiagnosisCode")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("DoctorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("FollowUpDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FollowUpInstructions")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -462,10 +804,18 @@ namespace HospitalManagement.DataAccess.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Symptoms")
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<List<string>>("Symptoms")
+                        .IsRequired()
+                        .HasColumnType("text[]");
+
+                    b.Property<string>("TreatmentPlan")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -477,7 +827,16 @@ namespace HospitalManagement.DataAccess.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("VisitId");
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("DoctorId");
+
+                    b.HasIndex("FollowUpDate");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("VisitId")
+                        .IsUnique();
 
                     b.ToTable("Consultations");
                 });
@@ -501,6 +860,12 @@ namespace HospitalManagement.DataAccess.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("HeadDoctorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("HeadDoctorId1")
+                        .HasColumnType("uuid");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -512,6 +877,8 @@ namespace HospitalManagement.DataAccess.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("HeadDoctorId1");
 
                     b.ToTable("Departments");
                 });
@@ -691,6 +1058,9 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<string>("AdminNotes")
+                        .HasColumnType("text");
 
                     b.Property<Guid?>("ApprovedBy")
                         .HasColumnType("uuid");
@@ -909,6 +1279,10 @@ namespace HospitalManagement.DataAccess.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("Substance")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -922,6 +1296,55 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.HasIndex("EmrRecordId");
 
                     b.ToTable("Allergies");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Emr.EmrDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BlobUrl")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EmrRecordId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UploadedBy")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmrRecordId");
+
+                    b.ToTable("EmrDocuments");
                 });
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.Emr.EmrRecord", b =>
@@ -960,6 +1383,58 @@ namespace HospitalManagement.DataAccess.Migrations
                         .IsUnique();
 
                     b.ToTable("EmrRecords");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Emr.Immunization", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DateAdministered")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DoseNumber")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<Guid>("EmrRecordId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VaccineName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmrRecordId");
+
+                    b.ToTable("Immunizations");
                 });
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.Emr.MedicalHistory", b =>
@@ -1069,61 +1544,13 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.ToTable("Vitals");
                 });
 
-            modelBuilder.Entity("HospitalManagement.DataAccess.Models.InsuranceClaim", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("ClaimAmount")
-                        .HasColumnType("numeric");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("PatientId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("PolicyNumber")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Provider")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("VisitId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PatientId");
-
-                    b.HasIndex("VisitId");
-
-                    b.ToTable("InsuranceClaims");
-                });
-
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.LabReport", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ConsultationId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
@@ -1154,11 +1581,22 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<string>("Observations")
                         .HasColumnType("text");
 
+                    b.Property<string>("OrderNotes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OrderNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("OriginalFileName")
                         .HasColumnType("text");
 
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<string>("ReportName")
                         .IsRequired()
@@ -1169,7 +1607,14 @@ namespace HospitalManagement.DataAccess.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("ReviewNotes")
+                        .HasColumnType("text");
+
                     b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("TestName")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -1179,18 +1624,64 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<Guid>("UploadedBy")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("VisitId")
-                        .HasColumnType("uuid");
-
                     b.HasKey("Id");
+
+                    b.HasIndex("ConsultationId");
 
                     b.HasIndex("DoctorId");
 
                     b.HasIndex("PatientId");
 
-                    b.HasIndex("VisitId");
-
                     b.ToTable("LabReports");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.LoginHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FailureReason")
+                        .HasColumnType("text");
+
+                    b.Property<string>("IpAddress")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsSuccess")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UserAgent")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Timestamp")
+                        .IsDescending();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("LoginHistories");
                 });
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.MedicationInventory", b =>
@@ -1246,6 +1737,9 @@ namespace HospitalManagement.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int>("Channel")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1265,9 +1759,24 @@ namespace HospitalManagement.DataAccess.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int>("Priority")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReferenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReferenceType")
+                        .HasColumnType("text");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1314,6 +1823,9 @@ namespace HospitalManagement.DataAccess.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("EmergencyContactRelationship")
+                        .HasColumnType("text");
+
                     b.Property<string>("FirstName")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1345,6 +1857,9 @@ namespace HospitalManagement.DataAccess.Migrations
 
                     b.Property<int>("NoShowCount")
                         .HasColumnType("integer");
+
+                    b.Property<bool>("OrganDonorFlag")
+                        .HasColumnType("boolean");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1410,6 +1925,9 @@ namespace HospitalManagement.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("ConsultationId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1422,10 +1940,55 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<DateTime?>("DispensedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid?>("DispensedBy")
+                    b.Property<Guid>("DoctorId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("DoctorId")
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("FinalizedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsultationId");
+
+                    b.HasIndex("DoctorId");
+
+                    b.HasIndex("PatientId");
+
+                    b.ToTable("Prescriptions");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.PrescriptionItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Dosage")
@@ -1435,9 +1998,6 @@ namespace HospitalManagement.DataAccess.Migrations
 
                     b.Property<int>("DurationDays")
                         .HasColumnType("integer");
-
-                    b.Property<DateTime>("EditableUntil")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Frequency")
                         .IsRequired()
@@ -1453,35 +2013,30 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<bool>("IsDispensed")
                         .HasColumnType("boolean");
 
-                    b.Property<bool>("IsVoided")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("MedicationName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<Guid>("PatientId")
+                    b.Property<Guid>("PrescriptionId")
                         .HasColumnType("uuid");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Strength")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("VisitId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("VoidReason")
-                        .HasColumnType("text");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("DoctorId");
+                    b.HasIndex("PrescriptionId");
 
-                    b.HasIndex("PatientId");
-
-                    b.HasIndex("VisitId");
-
-                    b.ToTable("Prescriptions");
+                    b.ToTable("PrescriptionItems");
                 });
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.QueueEntry", b =>
@@ -1489,6 +2044,9 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<int>("CallCount")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("CalledAt")
                         .HasColumnType("timestamp with time zone");
@@ -1654,10 +2212,19 @@ namespace HospitalManagement.DataAccess.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<string>("EmailVerificationToken")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("EmailVerificationTokenExpiry")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsEmailVerified")
                         .HasColumnType("boolean");
 
                     b.Property<DateTime?>("LastLoginAt")
@@ -1666,6 +2233,12 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<string>("PasswordResetToken")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("PasswordResetTokenExpiry")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("PhoneNumber")
                         .IsRequired()
@@ -1696,17 +2269,26 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<Guid?>("AppointmentId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("CancellationReason")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CancelledBy")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("CheckInTime")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("ChiefComplaint")
                         .HasColumnType("text");
 
-                    b.Property<string>("ClinicalNotes")
-                        .HasColumnType("text");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1714,8 +2296,8 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<Guid?>("DeletedBy")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Diagnosis")
-                        .HasColumnType("text");
+                    b.Property<Guid?>("DepartmentId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime?>("DischargeTime")
                         .HasColumnType("timestamp with time zone");
@@ -1726,8 +2308,17 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("QueueNumber")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RoomNumber")
+                        .HasColumnType("text");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -1736,16 +2327,88 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("VisitNumber")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("VisitType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
 
                     b.HasIndex("AppointmentId")
                         .IsUnique();
 
+                    b.HasIndex("CheckInTime");
+
+                    b.HasIndex("DepartmentId");
+
                     b.HasIndex("DoctorId");
 
                     b.HasIndex("PatientId");
 
+                    b.HasIndex("Status");
+
+                    b.HasIndex("VisitNumber")
+                        .IsUnique();
+
+                    b.HasIndex("VisitType");
+
                     b.ToTable("Visits");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.VisitHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ChangedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("NewState")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PreviousState")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("VisitId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VisitId");
+
+                    b.ToTable("VisitHistories");
                 });
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.Ward", b =>
@@ -1842,23 +2505,87 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Navigation("Ward");
                 });
 
-            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Billing", b =>
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Billing.InsuranceClaim", b =>
                 {
+                    b.HasOne("HospitalManagement.DataAccess.Models.Billing.Invoice", "Invoice")
+                        .WithMany("InsuranceClaims")
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Invoice");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Billing.Invoice", b =>
+                {
+                    b.HasOne("HospitalManagement.DataAccess.Models.Doctor", "Doctor")
+                        .WithMany()
+                        .HasForeignKey("DoctorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("HospitalManagement.DataAccess.Models.Patient", "Patient")
-                        .WithMany("Bills")
+                        .WithMany()
                         .HasForeignKey("PatientId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("HospitalManagement.DataAccess.Models.Patient", null)
+                        .WithMany("Invoices")
+                        .HasForeignKey("PatientId1");
+
                     b.HasOne("HospitalManagement.DataAccess.Models.Visit", "Visit")
-                        .WithOne("Billing")
-                        .HasForeignKey("HospitalManagement.DataAccess.Models.Billing", "VisitId")
+                        .WithMany()
+                        .HasForeignKey("VisitId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Doctor");
 
                     b.Navigation("Patient");
 
                     b.Navigation("Visit");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Billing.InvoiceItem", b =>
+                {
+                    b.HasOne("HospitalManagement.DataAccess.Models.Billing.Invoice", "Invoice")
+                        .WithMany("Items")
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Invoice");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Billing.Payment", b =>
+                {
+                    b.HasOne("HospitalManagement.DataAccess.Models.Billing.Invoice", "Invoice")
+                        .WithMany("Payments")
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Invoice");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Billing.Refund", b =>
+                {
+                    b.HasOne("HospitalManagement.DataAccess.Models.Billing.Invoice", "Invoice")
+                        .WithMany()
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("HospitalManagement.DataAccess.Models.Billing.Payment", "Payment")
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Invoice");
+
+                    b.Navigation("Payment");
                 });
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.BlockedSlot", b =>
@@ -1893,13 +2620,29 @@ namespace HospitalManagement.DataAccess.Migrations
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.Consultation", b =>
                 {
-                    b.HasOne("HospitalManagement.DataAccess.Models.Visit", "Visit")
+                    b.HasOne("HospitalManagement.DataAccess.Models.Doctor", "Doctor")
                         .WithMany()
-                        .HasForeignKey("VisitId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasForeignKey("DoctorId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("HospitalManagement.DataAccess.Models.Visit", "Visit")
+                        .WithOne("Consultation")
+                        .HasForeignKey("HospitalManagement.DataAccess.Models.Consultation", "VisitId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Doctor");
+
                     b.Navigation("Visit");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Department", b =>
+                {
+                    b.HasOne("HospitalManagement.DataAccess.Models.Doctor", "HeadDoctor")
+                        .WithMany()
+                        .HasForeignKey("HeadDoctorId1");
+
+                    b.Navigation("HeadDoctor");
                 });
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.DispensationRecord", b =>
@@ -2021,6 +2764,17 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Navigation("EmrRecord");
                 });
 
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Emr.EmrDocument", b =>
+                {
+                    b.HasOne("HospitalManagement.DataAccess.Models.Emr.EmrRecord", "EmrRecord")
+                        .WithMany("Documents")
+                        .HasForeignKey("EmrRecordId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("EmrRecord");
+                });
+
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.Emr.EmrRecord", b =>
                 {
                     b.HasOne("HospitalManagement.DataAccess.Models.Patient", "Patient")
@@ -2030,6 +2784,17 @@ namespace HospitalManagement.DataAccess.Migrations
                         .IsRequired();
 
                     b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Emr.Immunization", b =>
+                {
+                    b.HasOne("HospitalManagement.DataAccess.Models.Emr.EmrRecord", "EmrRecord")
+                        .WithMany("Immunizations")
+                        .HasForeignKey("EmrRecordId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("EmrRecord");
                 });
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.Emr.MedicalHistory", b =>
@@ -2061,27 +2826,13 @@ namespace HospitalManagement.DataAccess.Migrations
                     b.Navigation("Visit");
                 });
 
-            modelBuilder.Entity("HospitalManagement.DataAccess.Models.InsuranceClaim", b =>
-                {
-                    b.HasOne("HospitalManagement.DataAccess.Models.Patient", "Patient")
-                        .WithMany()
-                        .HasForeignKey("PatientId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("HospitalManagement.DataAccess.Models.Visit", "Visit")
-                        .WithMany()
-                        .HasForeignKey("VisitId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Patient");
-
-                    b.Navigation("Visit");
-                });
-
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.LabReport", b =>
                 {
+                    b.HasOne("HospitalManagement.DataAccess.Models.Consultation", "Consultation")
+                        .WithMany("LabReports")
+                        .HasForeignKey("ConsultationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("HospitalManagement.DataAccess.Models.Doctor", "Doctor")
                         .WithMany()
                         .HasForeignKey("DoctorId")
@@ -2094,16 +2845,22 @@ namespace HospitalManagement.DataAccess.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("HospitalManagement.DataAccess.Models.Visit", "Visit")
-                        .WithMany("LabReports")
-                        .HasForeignKey("VisitId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                    b.Navigation("Consultation");
 
                     b.Navigation("Doctor");
 
                     b.Navigation("Patient");
+                });
 
-                    b.Navigation("Visit");
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.LoginHistory", b =>
+                {
+                    b.HasOne("HospitalManagement.DataAccess.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.Notification", b =>
@@ -2141,6 +2898,12 @@ namespace HospitalManagement.DataAccess.Migrations
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.Prescription", b =>
                 {
+                    b.HasOne("HospitalManagement.DataAccess.Models.Consultation", "Consultation")
+                        .WithMany("Prescriptions")
+                        .HasForeignKey("ConsultationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("HospitalManagement.DataAccess.Models.Doctor", "Doctor")
                         .WithMany("Prescriptions")
                         .HasForeignKey("DoctorId")
@@ -2153,17 +2916,22 @@ namespace HospitalManagement.DataAccess.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("HospitalManagement.DataAccess.Models.Visit", "Visit")
-                        .WithMany("Prescriptions")
-                        .HasForeignKey("VisitId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                    b.Navigation("Consultation");
 
                     b.Navigation("Doctor");
 
                     b.Navigation("Patient");
+                });
 
-                    b.Navigation("Visit");
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.PrescriptionItem", b =>
+                {
+                    b.HasOne("HospitalManagement.DataAccess.Models.Prescription", "Prescription")
+                        .WithMany("Items")
+                        .HasForeignKey("PrescriptionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Prescription");
                 });
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.QueueEntry", b =>
@@ -2211,6 +2979,11 @@ namespace HospitalManagement.DataAccess.Migrations
                         .HasForeignKey("HospitalManagement.DataAccess.Models.Visit", "AppointmentId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("HospitalManagement.DataAccess.Models.Department", "Department")
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("HospitalManagement.DataAccess.Models.Doctor", "Doctor")
                         .WithMany("Visits")
                         .HasForeignKey("DoctorId")
@@ -2225,14 +2998,43 @@ namespace HospitalManagement.DataAccess.Migrations
 
                     b.Navigation("Appointment");
 
+                    b.Navigation("Department");
+
                     b.Navigation("Doctor");
 
                     b.Navigation("Patient");
                 });
 
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.VisitHistory", b =>
+                {
+                    b.HasOne("HospitalManagement.DataAccess.Models.Visit", "Visit")
+                        .WithMany()
+                        .HasForeignKey("VisitId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Visit");
+                });
+
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.Appointment", b =>
                 {
                     b.Navigation("Visit");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Billing.Invoice", b =>
+                {
+                    b.Navigation("InsuranceClaims");
+
+                    b.Navigation("Items");
+
+                    b.Navigation("Payments");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Consultation", b =>
+                {
+                    b.Navigation("LabReports");
+
+                    b.Navigation("Prescriptions");
                 });
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.Department", b =>
@@ -2258,6 +3060,10 @@ namespace HospitalManagement.DataAccess.Migrations
                 {
                     b.Navigation("Allergies");
 
+                    b.Navigation("Documents");
+
+                    b.Navigation("Immunizations");
+
                     b.Navigation("MedicalHistories");
 
                     b.Navigation("Vitals");
@@ -2267,17 +3073,22 @@ namespace HospitalManagement.DataAccess.Migrations
                 {
                     b.Navigation("Appointments");
 
-                    b.Navigation("Bills");
-
                     b.Navigation("Consents");
 
                     b.Navigation("EmrRecord");
+
+                    b.Navigation("Invoices");
 
                     b.Navigation("LabReports");
 
                     b.Navigation("Prescriptions");
 
                     b.Navigation("Visits");
+                });
+
+            modelBuilder.Entity("HospitalManagement.DataAccess.Models.Prescription", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.User", b =>
@@ -2289,11 +3100,7 @@ namespace HospitalManagement.DataAccess.Migrations
 
             modelBuilder.Entity("HospitalManagement.DataAccess.Models.Visit", b =>
                 {
-                    b.Navigation("Billing");
-
-                    b.Navigation("LabReports");
-
-                    b.Navigation("Prescriptions");
+                    b.Navigation("Consultation");
 
                     b.Navigation("Vitals");
                 });

@@ -1,14 +1,26 @@
 using HospitalManagement.BusinessLogic.DTOs.Common;
 using HospitalManagement.BusinessLogic.DTOs.LabReport;
-using Microsoft.AspNetCore.Http;
 
-namespace HospitalManagement.BusinessLogic.Services;
+namespace HospitalManagement.BusinessLogic.Services.Interfaces;
 
 public interface ILabReportService
 {
-    Task<LabReportResponseDto> UploadReportAsync(Guid uploaderUserId, UploadLabReportRequestDto request, CancellationToken ct = default);
-    Task<(byte[] Content, string ContentType, string FileName)> DownloadReportAsync(Guid reportId, Guid requestingUserId, CancellationToken ct = default);
-    Task<PagedResult<LabReportResponseDto>> GetPatientReportsAsync(Guid patientId, PaginationFilter filter, CancellationToken ct = default);
-    Task<LabReportResponseDto> UpdateStatusAsync(Guid reportId, string status, CancellationToken ct = default);
-    Task<LabReportResponseDto> GetByIdAsync(Guid reportId, CancellationToken ct = default);
+    // Orders
+    Task<LabReportResponseDto> CreateLabOrderAsync(Guid doctorUserId, CreateLabOrderRequestDto request, CancellationToken ct = default);
+    Task<LabReportResponseDto> UpdateOrderStatusAsync(Guid orderId, UpdateLabReportStatusDto request, CancellationToken ct = default);
+    
+    // Reports
+    Task<LabReportResponseDto> UploadLabReportAsync(Guid reportId, Guid uploaderUserId, UploadLabReportRequestDto request, CancellationToken ct = default);
+    Task<LabReportResponseDto> ReviewLabReportAsync(Guid reportId, Guid reviewerUserId, ReviewLabReportDto request, CancellationToken ct = default);
+    
+    // Queries
+    Task<LabReportResponseDto> GetByIdAsync(Guid id, Guid currentUserId, CancellationToken ct = default);
+    Task<(byte[] fileBytes, string contentType, string fileName)> DownloadReportAsync(Guid id, Guid currentUserId, CancellationToken ct = default);
+    Task<PagedResult<LabReportResponseDto>> GetPatientReportsAsync(Guid patientUserId, PaginationFilter filter, CancellationToken ct = default);
+    Task<PagedResult<LabReportResponseDto>> GetDoctorReportsAsync(Guid doctorUserId, PaginationFilter filter, CancellationToken ct = default);
+    Task<List<LabReportResponseDto>> GetConsultationReportsAsync(Guid consultationId, Guid currentUserId, CancellationToken ct = default);
+    
+    // Admin / Management
+    Task DeleteLabReportAsync(Guid id, CancellationToken ct = default);
+    Task<LabReportStatisticsDto> GetStatisticsAsync(CancellationToken ct = default);
 }

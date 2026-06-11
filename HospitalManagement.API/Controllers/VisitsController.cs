@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using HospitalManagement.BusinessLogic.DTOs.Common;
 using HospitalManagement.BusinessLogic.DTOs.Visit;
 using HospitalManagement.BusinessLogic.Services.Interfaces;
@@ -9,6 +10,7 @@ namespace HospitalManagement.Presentation.Controllers;
 
 [ApiController]
 [Route("api/visits")]
+[Authorize]
 [Produces("application/json")]
 public class VisitsController : ControllerBase
 {
@@ -22,27 +24,17 @@ public class VisitsController : ControllerBase
     }
 
     [HttpPost("/api/appointments/{appointmentId:guid}/visit")]
-    [Authorize(Roles = $"{AppConstants.Roles.Receptionist},{AppConstants.Roles.Admin}")]
-    [ProducesResponseType(typeof(VisitDto), 201)]
+    [Authorize(Roles = $"{AppConstants.Roles.Receptionist},{AppConstants.Roles.Admin},{AppConstants.Roles.Doctor}")]
+    [ProducesResponseType(typeof(VisitDetailsDto), 201)]
     public async Task<IActionResult> StartVisit(Guid appointmentId, [FromBody] StartVisitRequestDto request, CancellationToken ct)
     {
-        request.AppointmentId = appointmentId; // Ensure it matches route
-        var result = await _visitService.StartVisitAsync(request, ct);
+        var result = await _visitService.StartVisitAsync(appointmentId, request, ct);
         return CreatedAtAction(nameof(GetVisitById), new { visitId = result.Id }, new { success = true, data = result });
-    }
-
-    [HttpPut("{visitId}")]
-    [Authorize(Roles = $"{AppConstants.Roles.Doctor}")]
-    [ProducesResponseType(typeof(VisitDto), 200)]
-    public async Task<IActionResult> UpdateVisit(Guid visitId, [FromBody] UpdateVisitRequestDto request, CancellationToken ct)
-    {
-        var result = await _visitService.UpdateVisitAsync(visitId, request, ct);
-        return Ok(new { success = true, data = result });
     }
 
     [HttpPost("{visitId}/discharge")]
     [Authorize(Roles = $"{AppConstants.Roles.Doctor},{AppConstants.Roles.Admin}")]
-    [ProducesResponseType(typeof(VisitDto), 200)]
+    [ProducesResponseType(typeof(VisitDetailsDto), 200)]
     public async Task<IActionResult> DischargeVisit(Guid visitId, CancellationToken ct)
     {
         var result = await _visitService.DischargeVisitAsync(visitId, ct);
@@ -51,37 +43,64 @@ public class VisitsController : ControllerBase
 
     [HttpPost("{visitId}/cancel")]
     [Authorize(Roles = $"{AppConstants.Roles.Receptionist},{AppConstants.Roles.Admin}")]
-    [ProducesResponseType(typeof(VisitDto), 200)]
-    public async Task<IActionResult> CancelVisit(Guid visitId, CancellationToken ct)
+    [ProducesResponseType(typeof(VisitDetailsDto), 200)]
+    public async Task<IActionResult> CancelVisit(Guid visitId, [FromBody] CancelVisitRequestDto request, CancellationToken ct)
     {
-        var result = await _visitService.CancelVisitAsync(visitId, ct);
+        var result = await _visitService.CancelVisitAsync(visitId, request, ct);
         return Ok(new { success = true, data = result });
     }
 
     [HttpGet("{visitId}")]
-    [Authorize]
-    [ProducesResponseType(typeof(VisitDto), 200)]
+    [ProducesResponseType(typeof(VisitDetailsDto), 200)]
     public async Task<IActionResult> GetVisitById(Guid visitId, CancellationToken ct)
     {
         var result = await _visitService.GetVisitByIdAsync(visitId, ct);
         return Ok(new { success = true, data = result });
     }
 
-    [HttpGet("patient/{patientId}")]
-    [Authorize]
-    [ProducesResponseType(typeof(PagedResult<VisitDto>), 200)]
-    public async Task<IActionResult> GetVisitsByPatient(Guid patientId, [FromQuery] PaginationFilter filter, CancellationToken ct)
+    [HttpGet("patient/me")]
+    [Authorize(Roles = AppConstants.Roles.Patient)]
+    [ProducesResponseType(typeof(PagedResult<VisitSummaryDto>), 200)]
+    public async Task<IActionResult> GetMyVisitsPatient([FromQuery] VisitFilterDto filter, CancellationToken ct)
     {
-        var result = await _visitService.GetVisitsByPatientAsync(patientId, filter, ct);
+        filter.PatientId = GetCurrentUserId();
+        var result = await _visitService.GetVisitsAsync(filter, ct);
         return Ok(new { success = true, data = result });
     }
 
-    [HttpGet("doctor/{doctorId}")]
-    [Authorize(Roles = $"{AppConstants.Roles.Doctor},{AppConstants.Roles.Admin}")]
-    [ProducesResponseType(typeof(PagedResult<VisitDto>), 200)]
-    public async Task<IActionResult> GetVisitsByDoctor(Guid doctorId, [FromQuery] PaginationFilter filter, CancellationToken ct)
+    [HttpGet("doctor/me")]
+    [Authorize(Roles = AppConstants.Roles.Doctor)]
+    [ProducesResponseType(typeof(PagedResult<VisitSummaryDto>), 200)]
+    public async Task<IActionResult> GetMyVisitsDoctor([FromQuery] VisitFilterDto filter, CancellationToken ct)
     {
-        var result = await _visitService.GetVisitsByDoctorAsync(doctorId, filter, ct);
+        filter.DoctorId = GetCurrentUserId();
+        var result = await _visitService.GetVisitsAsync(filter, ct);
         return Ok(new { success = true, data = result });
+    }
+
+    [HttpGet]
+    [Authorize(Roles = $"{AppConstants.Roles.Admin},{AppConstants.Roles.Receptionist}")]
+    [ProducesResponseType(typeof(PagedResult<VisitSummaryDto>), 200)]
+    public async Task<IActionResult> GetAllVisits([FromQuery] VisitFilterDto filter, CancellationToken ct)
+    {
+        var result = await _visitService.GetVisitsAsync(filter, ct);
+        return Ok(new { success = true, data = result });
+    }
+
+    [HttpGet("{visitId}/history")]
+    [Authorize]
+    [ProducesResponseType(typeof(List<VisitHistoryDto>), 200)]
+    public async Task<IActionResult> GetVisitHistory(Guid visitId, CancellationToken ct)
+    {
+        var result = await _visitService.GetVisitHistoryAsync(visitId, ct);
+        return Ok(new { success = true, data = result });
+    }
+
+    private Guid GetCurrentUserId()
+    {
+        var id = User.FindFirstValue(AppConstants.Jwt.ClaimUserId)
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? throw new InvalidOperationException("User ID claim not found.");
+        return Guid.Parse(id);
     }
 }

@@ -1,14 +1,13 @@
 using System.Security.Claims;
 using HospitalManagement.BusinessLogic.DTOs.Common;
 using HospitalManagement.BusinessLogic.DTOs.LabReport;
-using HospitalManagement.BusinessLogic.Services;
+using HospitalManagement.BusinessLogic.Services.Interfaces;
 using HospitalManagement.DataAccess.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HospitalManagement.Presentation.Controllers;
 
-/// <summary>Lab report upload, download, listing, and status update.</summary>
 [ApiController]
 [Route("api/lab-reports")]
 [Authorize]
@@ -16,61 +15,108 @@ namespace HospitalManagement.Presentation.Controllers;
 public class LabReportsController : ControllerBase
 {
     private readonly ILabReportService _labReportService;
-    private readonly ILogger<LabReportsController> _logger;
 
-    public LabReportsController(ILabReportService labReportService, ILogger<LabReportsController> logger)
+    public LabReportsController(ILabReportService labReportService)
     {
         _labReportService = labReportService;
-        _logger = logger;
     }
 
-    /// <summary>Upload a lab report file (LabTechnician or Doctor).</summary>
-    [HttpPost]
-    [Authorize(Roles = $"{AppConstants.Roles.LabTechnician},{AppConstants.Roles.Doctor},{AppConstants.Roles.Admin}")]
-    [Consumes("multipart/form-data")]
+    [HttpPost("/api/lab-orders")]
+    [Authorize(Roles = AppConstants.Roles.Doctor)]
     [ProducesResponseType(typeof(LabReportResponseDto), 201)]
-    public async Task<IActionResult> Upload([FromForm] UploadLabReportRequestDto request, CancellationToken ct)
+    public async Task<IActionResult> CreateLabOrder([FromBody] CreateLabOrderRequestDto request, CancellationToken ct)
     {
-        var result = await _labReportService.UploadReportAsync(GetCurrentUserId(), request, ct);
+        var result = await _labReportService.CreateLabOrderAsync(GetCurrentUserId(), request, ct);
         return CreatedAtAction(nameof(GetById), new { id = result.Id }, new { success = true, data = result });
     }
 
-    /// <summary>Get a lab report by ID.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(LabReportResponseDto), 200)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
-        var result = await _labReportService.GetByIdAsync(id, ct);
+        var result = await _labReportService.GetByIdAsync(id, GetCurrentUserId(), ct);
         return Ok(new { success = true, data = result });
     }
 
-    /// <summary>Download the actual lab report file.</summary>
+    [HttpGet("patient/me")]
+    [Authorize(Roles = AppConstants.Roles.Patient)]
+    [ProducesResponseType(typeof(PagedResult<LabReportResponseDto>), 200)]
+    public async Task<IActionResult> GetMyPatientReports([FromQuery] PaginationFilter filter, CancellationToken ct)
+    {
+        var result = await _labReportService.GetPatientReportsAsync(GetCurrentUserId(), filter, ct);
+        return Ok(new { success = true, data = result });
+    }
+
+    [HttpGet("doctor/me")]
+    [Authorize(Roles = AppConstants.Roles.Doctor)]
+    [ProducesResponseType(typeof(PagedResult<LabReportResponseDto>), 200)]
+    public async Task<IActionResult> GetMyDoctorReports([FromQuery] PaginationFilter filter, CancellationToken ct)
+    {
+        var result = await _labReportService.GetDoctorReportsAsync(GetCurrentUserId(), filter, ct);
+        return Ok(new { success = true, data = result });
+    }
+
+    [HttpGet("consultation/{consultationId:guid}")]
+    [ProducesResponseType(typeof(List<LabReportResponseDto>), 200)]
+    public async Task<IActionResult> GetReportsForConsultation(Guid consultationId, CancellationToken ct)
+    {
+        var result = await _labReportService.GetConsultationReportsAsync(consultationId, GetCurrentUserId(), ct);
+        return Ok(new { success = true, data = result });
+    }
+
+    [HttpPut("{id:guid}/status")]
+    [Authorize(Roles = AppConstants.Roles.Admin)]
+    [ProducesResponseType(typeof(LabReportResponseDto), 200)]
+    public async Task<IActionResult> UpdateOrderStatus(Guid id, [FromBody] UpdateLabReportStatusDto request, CancellationToken ct)
+    {
+        var result = await _labReportService.UpdateOrderStatusAsync(id, request, ct);
+        return Ok(new { success = true, data = result });
+    }
+
+    [HttpPut("{id:guid}/upload")]
+    [Authorize(Roles = AppConstants.Roles.Admin)]
+    [Consumes("multipart/form-data")]
+    [ProducesResponseType(typeof(LabReportResponseDto), 200)]
+    public async Task<IActionResult> UploadLabReport(Guid id, [FromForm] UploadLabReportRequestDto request, CancellationToken ct)
+    {
+        var result = await _labReportService.UploadLabReportAsync(id, GetCurrentUserId(), request, ct);
+        return Ok(new { success = true, data = result });
+    }
+
+    [HttpPut("{id:guid}/review")]
+    [Authorize(Roles = AppConstants.Roles.Doctor)]
+    [ProducesResponseType(typeof(LabReportResponseDto), 200)]
+    public async Task<IActionResult> ReviewReport(Guid id, [FromBody] ReviewLabReportDto request, CancellationToken ct)
+    {
+        var result = await _labReportService.ReviewLabReportAsync(id, GetCurrentUserId(), request, ct);
+        return Ok(new { success = true, data = result });
+    }
+
     [HttpGet("{id:guid}/download")]
     [ProducesResponseType(200)]
     [ProducesResponseType(404)]
-    public async Task<IActionResult> Download(Guid id, CancellationToken ct)
+    public async Task<IActionResult> DownloadReport(Guid id, CancellationToken ct)
     {
-        var (content, contentType, fileName) = await _labReportService.DownloadReportAsync(id, GetCurrentUserId(), ct);
-        return File(content, contentType, fileName);
+        var (fileBytes, contentType, fileName) = await _labReportService.DownloadReportAsync(id, GetCurrentUserId(), ct);
+        return File(fileBytes, contentType, fileName);
     }
 
-    /// <summary>Get all lab reports for a patient.</summary>
-    [HttpGet("patient/{patientId:guid}")]
-    [ProducesResponseType(typeof(PagedResult<LabReportResponseDto>), 200)]
-    public async Task<IActionResult> GetByPatient(Guid patientId, [FromQuery] PaginationFilter filter, CancellationToken ct)
+    [HttpDelete("{id:guid}")]
+    [Authorize(Roles = AppConstants.Roles.Admin)]
+    [ProducesResponseType(204)]
+    public async Task<IActionResult> DeleteLabReport(Guid id, CancellationToken ct)
     {
-        var result = await _labReportService.GetPatientReportsAsync(patientId, filter, ct);
-        return Ok(new { success = true, data = result });
+        await _labReportService.DeleteLabReportAsync(id, ct);
+        return NoContent();
     }
 
-    /// <summary>Update lab report status (LabTechnician/Doctor/Admin).</summary>
-    [HttpPut("{id:guid}/status")]
-    [Authorize(Roles = $"{AppConstants.Roles.LabTechnician},{AppConstants.Roles.Doctor},{AppConstants.Roles.Admin}")]
-    [ProducesResponseType(typeof(LabReportResponseDto), 200)]
-    public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] string status, CancellationToken ct)
+    [HttpGet("statistics")]
+    [Authorize(Roles = AppConstants.Roles.Admin)]
+    [ProducesResponseType(typeof(LabReportStatisticsDto), 200)]
+    public async Task<IActionResult> GetStatistics(CancellationToken ct)
     {
-        var result = await _labReportService.UpdateStatusAsync(id, status, ct);
-        return Ok(new { success = true, data = result });
+        var stats = await _labReportService.GetStatisticsAsync(ct);
+        return Ok(new { success = true, data = stats });
     }
 
     private Guid GetCurrentUserId()

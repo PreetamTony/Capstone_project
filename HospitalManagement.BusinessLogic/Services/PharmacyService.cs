@@ -33,42 +33,39 @@ public class PharmacyService : IPharmacyService
     public async Task<DispensationRecordDto> DispensePrescriptionAsync(DispensePrescriptionRequestDto request, CancellationToken ct = default)
     {
         var prescription = await _uow.Prescriptions.Query()
-            .Include(p => p.Visit)
-                .ThenInclude(v => v.Patient)
+            .Include(p => p.Patient)
+            .Include(p => p.Items)
             .FirstOrDefaultAsync(p => p.Id == request.PrescriptionId, ct)
             ?? throw new NotFoundException("Prescription", request.PrescriptionId);
-
-        // Simple parsing logic: assume prescription format is "MedicationName - Quantity"
-        // In a real system, Prescription would have structured Items instead of a string.
-        // For now, we will just dispense a generic matching item or throw if not found.
-        
-        var med = await _uow.MedicationInventories.FirstOrDefaultAsync(m => m.QuantityInStock > 0, ct);
-        if (med == null)
-            throw new BusinessRuleViolationException("OutOfStock", "No medications in stock to dispense.");
-
-        int quantityToDispense = 1;
 
         var record = new DispensationRecord
         {
             PrescriptionId = prescription.Id,
-            PatientId = prescription.Visit.PatientId,
+            PatientId = prescription.PatientId,
             DispensedAt = DateTime.UtcNow,
-            TotalCost = med.UnitPrice * quantityToDispense
+            TotalCost = 0
         };
 
-        var dispensedItem = new DispensedItem
+        foreach (var pItem in prescription.Items)
         {
-            Record = record,
-            MedicationId = med.Id,
-            Quantity = quantityToDispense,
-            UnitPrice = med.UnitPrice
-        };
+            var med = await _uow.MedicationInventories.FirstOrDefaultAsync(m => m.Name.ToLower() == pItem.MedicationName.ToLower(), ct);
+            if (med == null || med.QuantityInStock < pItem.Quantity)
+                throw new BusinessRuleViolationException("OutOfStock", $"Insufficient stock for {pItem.MedicationName}.");
 
-        record.Items.Add(dispensedItem);
+            var dispensedItem = new DispensedItem
+            {
+                Record = record,
+                MedicationId = med.Id,
+                Quantity = pItem.Quantity,
+                UnitPrice = med.UnitPrice
+            };
 
-        // Deduct from inventory
-        med.QuantityInStock -= quantityToDispense;
-        _uow.MedicationInventories.Update(med);
+            record.Items.Add(dispensedItem);
+            record.TotalCost += (pItem.Quantity * med.UnitPrice);
+
+            med.QuantityInStock -= pItem.Quantity;
+            _uow.MedicationInventories.Update(med);
+        }
 
         await _uow.DispensationRecords.AddAsync(record, ct);
         await _uow.CompleteAsync(ct);
@@ -78,13 +75,13 @@ public class PharmacyService : IPharmacyService
             Id = record.Id,
             PrescriptionId = record.PrescriptionId,
             PatientId = record.PatientId,
-            PatientName = $"{prescription.Visit.Patient.FirstName} {prescription.Visit.Patient.LastName}",
+            PatientName = $"{prescription.Patient.FirstName} {prescription.Patient.LastName}",
             DispensedAt = record.DispensedAt,
             TotalCost = record.TotalCost,
             Items = record.Items.Select(i => new DispensedItemDto
             {
                 Id = i.Id,
-                MedicationName = med.Name,
+                MedicationName = i.Medication?.Name ?? "Unknown",
                 Quantity = i.Quantity,
                 UnitPrice = i.UnitPrice
             }).ToList()

@@ -26,6 +26,33 @@ public class SchedulesController : ControllerBase
         return Ok(result);
     }
 
+    [HttpPost("doctor/{doctorId}")]
+    [Authorize(Roles = $"{AppConstants.Roles.Admin},{AppConstants.Roles.Doctor}")]
+    public async Task<ActionResult<List<DoctorScheduleDto>>> CreateDoctorSchedule(
+        Guid doctorId, [FromBody] CreateScheduleRequestDto request, CancellationToken ct)
+    {
+        var result = await _scheduleService.CreateDoctorScheduleAsync(doctorId, request, ct);
+        return CreatedAtAction(nameof(GetDoctorSchedule), new { doctorId = doctorId, startDate = request.ValidFrom, endDate = request.ValidTo }, result);
+    }
+
+    [HttpPut("doctor/{doctorId}/schedule/{scheduleId}")]
+    [Authorize(Roles = $"{AppConstants.Roles.Admin},{AppConstants.Roles.Doctor}")]
+    public async Task<IActionResult> UpdateDoctorSchedule(
+        Guid doctorId, Guid scheduleId, [FromBody] UpdateScheduleRequestDto request, CancellationToken ct)
+    {
+        await _scheduleService.UpdateDoctorScheduleAsync(doctorId, scheduleId, request, ct);
+        return NoContent();
+    }
+
+    [HttpDelete("doctor/{doctorId}/schedule/{scheduleId}")]
+    [Authorize(Roles = $"{AppConstants.Roles.Admin},{AppConstants.Roles.Doctor}")]
+    public async Task<IActionResult> DeleteDoctorSchedule(
+        Guid doctorId, Guid scheduleId, CancellationToken ct)
+    {
+        await _scheduleService.DeleteDoctorScheduleAsync(doctorId, scheduleId, ct);
+        return NoContent();
+    }
+
     [HttpGet("doctor/{doctorId}/available-slots")]
     public async Task<ActionResult<List<TimeSlotDto>>> GetAvailableSlots(
         Guid doctorId, [FromQuery] DateTime date, CancellationToken ct)

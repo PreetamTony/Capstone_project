@@ -3,7 +3,7 @@ namespace HospitalManagement.DataAccess.Models.Enums;
 public enum VisitStatus
 {
     CheckedIn,
-    InProgress,
-    Discharged,
+    InConsultation,
+    Completed,
     Cancelled
 }

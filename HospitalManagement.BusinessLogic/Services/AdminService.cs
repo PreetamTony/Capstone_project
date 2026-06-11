@@ -4,6 +4,7 @@ using HospitalManagement.BusinessLogic.Services.Interfaces;
 using HospitalManagement.DataAccess.Models;
 using HospitalManagement.DataAccess.Context;
 using HospitalManagement.DataAccess.Models.Enums;
+using HospitalManagement.DataAccess.Models.Enums.Billing;
 using HospitalManagement.DataAccess.Exceptions;
 using HospitalManagement.DataAccess.Repositories;
 using HospitalManagement.DataAccess.Interfaces;
@@ -18,13 +19,20 @@ public partial class AdminService : IAdminService
     private readonly IUnitOfWork _uow;
     private readonly ILogger<AdminService> _logger;
     private readonly ICurrentUserService _currentUserService;
+    private readonly INotificationService _notificationService;
 
-    public AdminService(AppDbContext context, IUnitOfWork uow, ILogger<AdminService> logger, ICurrentUserService currentUserService)
+    public AdminService(
+        AppDbContext context, 
+        IUnitOfWork uow, 
+        ILogger<AdminService> logger, 
+        ICurrentUserService currentUserService,
+        INotificationService notificationService)
     {
         _context = context;
         _uow = uow;
         _logger = logger;
         _currentUserService = currentUserService;
+        _notificationService = notificationService;
     }
 
     public async Task<PagedResult<AuditLogResponseDto>> GetAuditLogsAsync(
@@ -181,23 +189,23 @@ public partial class AdminService : IAdminService
         var walkInPatients = totalAppointments - teleconsultations; // Assuming remaining are walk-in/in-person
 
         // 3. Financial Metrics
-        var billings = await _context.Billings
+        var billings = await _context.Invoices
             .Where(b => b.CreatedAt >= targetDate && b.CreatedAt <= endTargetDate)
             .ToListAsync(ct);
 
-        var prevBillings = await _context.Billings
-            .Where(b => b.CreatedAt >= previousDayStart && b.CreatedAt <= previousDayEnd && b.Status == BillingStatus.Paid)
-            .SumAsync(b => b.Amount, ct);
+        var prevBillings = await _context.Invoices
+            .Where(b => b.CreatedAt >= previousDayStart && b.CreatedAt <= previousDayEnd && b.Status == InvoiceStatus.Paid)
+            .SumAsync(b => b.TotalAmount, ct);
 
-        var totalRevenue = billings.Where(b => b.Status == BillingStatus.Paid).Sum(b => b.Amount);
-        var consultationRevenue = billings.Where(b => b.Status == BillingStatus.Paid && b.Category == BillingCategory.Consultation).Sum(b => b.Amount);
-        var labRevenue = billings.Where(b => b.Status == BillingStatus.Paid && b.Category == BillingCategory.Lab).Sum(b => b.Amount);
-        var pharmacyRevenue = billings.Where(b => b.Status == BillingStatus.Paid && b.Category == BillingCategory.Pharmacy).Sum(b => b.Amount);
+        var totalRevenue = billings.Where(b => b.Status == InvoiceStatus.Paid).Sum(b => b.TotalAmount);
+        var consultationRevenue = 0m; // billings.Where(b => b.Status == InvoiceStatus.Paid && b.Category == BillingCategory.Consultation).Sum(b => b.TotalAmount);
+        var labRevenue = 0m; // billings.Where(b => b.Status == InvoiceStatus.Paid && b.Category == BillingCategory.Lab).Sum(b => b.TotalAmount);
+        var pharmacyRevenue = 0m; // billings.Where(b => b.Status == InvoiceStatus.Paid && b.Category == BillingCategory.Pharmacy).Sum(b => b.TotalAmount);
         
         var insuranceClaims = billings.Count(b => b.InsuranceCoverage > 0);
-        var insuranceAmount = billings.Sum(b => b.InsuranceCoverage);
-        var pendingPayments = billings.Where(b => b.Status == BillingStatus.Pending).Sum(b => b.Amount);
-        var refundsProcessed = billings.Where(b => b.Status == BillingStatus.Refunded).Sum(b => b.Amount);
+        var insuranceTotalAmount = billings.Sum(b => b.InsuranceCoverage);
+        var pendingPayments = billings.Where(b => b.Status == InvoiceStatus.Pending).Sum(b => b.TotalAmount);
+        var refundsProcessed = billings.Where(b => b.Status == InvoiceStatus.Refunded).Sum(b => b.TotalAmount);
 
         // 4. Operational Metrics
         var isoDayOfWeek = targetDate.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)targetDate.DayOfWeek;
@@ -223,8 +231,8 @@ public partial class AdminService : IAdminService
         var appointmentUtilizationRate = totalCapacitySlots > 0 ? (totalAppointments / totalCapacitySlots) * 100 : 0;
         if (appointmentUtilizationRate > 100) appointmentUtilizationRate = 100; // Cap at 100%
 
-        var pendingBillsCount = billings.Count(b => b.Status == BillingStatus.Pending);
-        var labReportsPending = await _context.LabReports.CountAsync(lr => lr.Status == LabReportStatus.Pending && lr.CreatedAt <= endTargetDate, ct);
+        var pendingBillsCount = billings.Count(b => b.Status == InvoiceStatus.Pending);
+        var labReportsPending = await _context.LabReports.CountAsync(lr => (lr.Status == LabReportStatus.Ordered || lr.Status == LabReportStatus.SampleCollected || lr.Status == LabReportStatus.InProgress) && lr.CreatedAt <= endTargetDate, ct);
         var admittedPatients = await _context.AdmissionRecords.CountAsync(ar => ar.Status == "Admitted", ct);
 
         // Average times (Mocked logic from queues or just approximated if missing)
@@ -241,7 +249,7 @@ public partial class AdminService : IAdminService
                 DoctorName = $"Dr. {g.Key.FirstName} {g.Key.LastName}",
                 PatientsSeen = g.Count(),
                 AverageWaitTime = 10.0, // Mocked
-                Revenue = billings.Where(b => b.VisitId != Guid.Empty && g.Select(a => a.Id).Contains(b.VisitId)).Sum(b => b.Amount) // Appx
+                Revenue = billings.Where(b => b.VisitId != Guid.Empty && g.Select(a => a.Id).Contains(b.VisitId)).Sum(b => b.TotalAmount) // Appx
             })
             .ToList();
 
@@ -252,7 +260,7 @@ public partial class AdminService : IAdminService
             .ToDictionary(g => g.Key, g => new DepartmentMetricsDto
             {
                 Appointments = g.Count(),
-                Revenue = billings.Where(b => b.VisitId != Guid.Empty && g.Select(a => a.Id).Contains(b.VisitId)).Sum(b => b.Amount),
+                Revenue = billings.Where(b => b.VisitId != Guid.Empty && g.Select(a => a.Id).Contains(b.VisitId)).Sum(b => b.TotalAmount),
                 WaitTime = 12.0 // Mocked
             });
 
@@ -293,7 +301,7 @@ public partial class AdminService : IAdminService
             LabRevenue = labRevenue,
             PharmacyRevenue = pharmacyRevenue,
             InsuranceClaims = insuranceClaims,
-            InsuranceAmount = insuranceAmount,
+            InsuranceAmount = insuranceTotalAmount,
             PendingPayments = pendingPayments,
             RefundsProcessed = refundsProcessed,
             AverageWaitTimeMinutes = averageWaitTimeMinutes,
@@ -372,6 +380,9 @@ public partial class AdminService : IAdminService
 
         await _uow.Users.AddAsync(user, ct);
         await _uow.CompleteAsync(ct);
+
+        // Send email with the temporary password
+        await _notificationService.NotifyUserCreatedAsync(user.Id, tempPassword, ct);
 
         return new CreateUserResponseDto
         {
@@ -469,7 +480,10 @@ public partial class AdminService : IAdminService
             Specialization = request.Specialization,
             Qualification = request.Qualification,
             ExperienceYears = request.ExperienceYears,
-            ConsultationFee = request.ConsultationFee
+            ConsultationFee = request.ConsultationFee,
+            LicenseNumber = string.IsNullOrWhiteSpace(request.LicenseNumber) 
+                ? $"LIC-{Guid.NewGuid().ToString("N")[..8].ToUpper()}" 
+                : request.LicenseNumber
         };
 
         await _uow.Doctors.AddAsync(doctor, ct);

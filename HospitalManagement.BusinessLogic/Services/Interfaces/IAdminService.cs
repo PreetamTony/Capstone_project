@@ -23,4 +23,17 @@ public interface IAdminService
     Task<byte[]> ExportUsersCsvAsync(CancellationToken ct = default);
     Task<UserStatsDto> GetUserStatsAsync(CancellationToken ct = default);
     Task<BulkCreateUsersResponseDto> BulkCreateUsersAsync(BulkCreateUsersRequestDto request, CancellationToken ct = default);
+
+    Task<PagedResult<DoctorSummaryDto>> GetDoctorsAsync(Guid? departmentId, bool? isActive, string? search, int pageNumber = 1, int pageSize = 20, CancellationToken ct = default);
+    Task<DoctorDetailDto> GetDoctorByIdAsync(Guid doctorId, CancellationToken ct = default);
+    Task UpdateDoctorAsync(Guid doctorId, UpdateDoctorRequestDto request, CancellationToken ct = default);
+    Task ArchiveDoctorAsync(Guid doctorId, CancellationToken ct = default);
+    Task<byte[]> ExportDoctorsCsvAsync(CancellationToken ct = default);
+    Task<DoctorStatsDto> GetDoctorStatsAsync(CancellationToken ct = default);
+
+    Task<PagedResult<LeaveRequestDto>> GetLeaveRequestsAsync(string? status, DateTime? fromDate, DateTime? toDate, Guid? doctorId, int pageNumber = 1, int pageSize = 20, CancellationToken ct = default);
+    Task<LeaveRequestDto> GetLeaveRequestByIdAsync(Guid id, CancellationToken ct = default);
+    Task ApproveLeaveRequestAsync(Guid id, string? notes, CancellationToken ct = default);
+    Task RejectLeaveRequestAsync(Guid id, string reason, CancellationToken ct = default);
+    Task CancelLeaveRequestAsync(Guid id, CancellationToken ct = default);
 }

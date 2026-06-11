@@ -1,32 +1,28 @@
+using HospitalManagement.DataAccess.Models.Enums;
+
 namespace HospitalManagement.DataAccess.Models;
 
 /// <summary>
-/// Medical prescription issued during an appointment.
-/// EditableUntil = CreatedAt + 30 minutes (enforced in service layer).
+/// Medical prescription issued during a consultation. Contains multiple items.
 /// </summary>
 public class Prescription : BaseEntity
 {
-    public Guid VisitId { get; set; }
+    public Guid ConsultationId { get; set; }
     public Guid DoctorId { get; set; }
     public Guid PatientId { get; set; }
-    public string MedicationName { get; set; } = string.Empty;
-    public string Dosage { get; set; } = string.Empty;
-    public string Frequency { get; set; } = string.Empty;
-    public int DurationDays { get; set; }
-    public string? Instructions { get; set; }
-    public bool IsDispensed { get; set; } = false;
-    public Guid? DispensedBy { get; set; }
-    public DateTime? DispensedAt { get; set; }
-    public bool IsVoided { get; set; } = false;
-    public string? VoidReason { get; set; }
 
-    /// <summary>Computed: CreatedAt + 30 minutes. Enforced in service layer.</summary>
-    public DateTime EditableUntil { get; set; }
+    public PrescriptionStatus Status { get; set; } = PrescriptionStatus.Draft;
+    
+    public DateTime? FinalizedAt { get; set; }
+    public DateTime? DispensedAt { get; set; }
+    public DateTime? ExpiresAt { get; set; }
+    
+    public string? Notes { get; set; }
+
+    public ICollection<PrescriptionItem> Items { get; set; } = new List<PrescriptionItem>();
 
     // Navigation
-    public Visit Visit { get; set; } = null!;
+    public Consultation Consultation { get; set; } = null!;
     public Doctor Doctor { get; set; } = null!;
     public Patient Patient { get; set; } = null!;
-
-    public bool IsEditable => DateTime.UtcNow <= EditableUntil && !IsVoided;
 }

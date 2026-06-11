@@ -7,6 +7,7 @@ public class Allergy : BaseEntity
     public string Substance { get; set; } = string.Empty;
     public string Severity { get; set; } = string.Empty; // e.g., Mild, Moderate, Severe
     public string Reaction { get; set; } = string.Empty; // e.g., Hives, Anaphylaxis
+    public string Status { get; set; } = "Active"; // Active, Inactive
     public string? Notes { get; set; }
 
     // Navigation

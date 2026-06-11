@@ -19,6 +19,26 @@ public class DoctorScheduleDto
     public DateTime ValidTo { get; set; }
 }
 
+public class CreateScheduleRequestDto
+{
+    public List<int> DaysOfWeek { get; set; } = new List<int>();
+    public TimeSpan StartTime { get; set; }
+    public TimeSpan EndTime { get; set; }
+    public bool IsRecurring { get; set; }
+    public DateTime ValidFrom { get; set; }
+    public DateTime ValidTo { get; set; }
+}
+
+public class UpdateScheduleRequestDto
+{
+    public int DayOfWeek { get; set; }
+    public TimeSpan StartTime { get; set; }
+    public TimeSpan EndTime { get; set; }
+    public bool IsRecurring { get; set; }
+    public DateTime ValidFrom { get; set; }
+    public DateTime ValidTo { get; set; }
+}
+
 public class ApplyLeaveRequestDto
 {
     public string LeaveType { get; set; } = string.Empty;

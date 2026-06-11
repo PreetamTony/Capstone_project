@@ -16,9 +16,10 @@ public class VisitRepository : GenericRepository<Visit>, IVisitRepository
             .Include(v => v.Patient)
             .Include(v => v.Doctor)
             .Include(v => v.Vitals)
-            .Include(v => v.Prescriptions)
-            .Include(v => v.LabReports)
-            .Include(v => v.Billing)
+            .Include(v => v.Consultation!)
+                .ThenInclude(c => c.Prescriptions)
+            .Include(v => v.Consultation!)
+                .ThenInclude(c => c.LabReports)
             .FirstOrDefaultAsync(v => v.Id == visitId, ct);
     }
 

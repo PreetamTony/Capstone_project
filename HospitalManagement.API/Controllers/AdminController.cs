@@ -5,6 +5,7 @@ using HospitalManagement.DataAccess.Constants;
 using HospitalManagement.DataAccess.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using HospitalManagement.BusinessLogic.Services; 
 
 namespace HospitalManagement.Presentation.Controllers;
 
@@ -16,11 +17,13 @@ namespace HospitalManagement.Presentation.Controllers;
 public class AdminController : ControllerBase
 {
     private readonly IAdminService _adminService;
+    private readonly IAuthService _authService;
     private readonly ILogger<AdminController> _logger;
 
-    public AdminController(IAdminService adminService, ILogger<AdminController> logger)
+    public AdminController(IAdminService adminService, IAuthService authService, ILogger<AdminController> logger)
     {
         _adminService = adminService;
+        _authService = authService;
         _logger = logger;
     }
 
@@ -53,13 +56,66 @@ public class AdminController : ControllerBase
         return Ok(new { success = true, data = result });
     }
 
-    /// <summary>Get a daily operations summary.</summary>
     [HttpGet("daily-summary")]
     [ProducesResponseType(typeof(DailySummaryDto), 200)]
     public async Task<IActionResult> GetDailySummary([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, CancellationToken ct = default)
     {
         var result = await _adminService.GetDailySummaryAsync(fromDate, toDate, ct);
         return Ok(new { success = true, data = result });
+    }
+
+    [HttpGet("daily-summary/export")]
+    [ProducesResponseType(typeof(FileContentResult), 200)]
+    public async Task<IActionResult> ExportDailySummary([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, [FromQuery] string format = "csv", CancellationToken ct = default)
+    {
+        var summary = await _adminService.GetDailySummaryAsync(fromDate, toDate, ct);
+        
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("Metric,Value");
+        sb.AppendLine($"Date Range,{summary.Date:yyyy-MM-dd}");
+        sb.AppendLine($"Total Appointments,{summary.TotalAppointments}");
+        sb.AppendLine($"Completed Appointments,{summary.CompletedAppointments}");
+        sb.AppendLine($"Cancelled Appointments,{summary.CancelledAppointments}");
+        sb.AppendLine($"No Shows,{summary.NoShows}");
+        sb.AppendLine($"New Patients,{summary.NewPatients}");
+        sb.AppendLine($"Returning Patients,{summary.ReturningPatients}");
+        sb.AppendLine($"Walk-ins,{summary.WalkInPatients}");
+        sb.AppendLine($"Teleconsultations,{summary.Teleconsultations}");
+        sb.AppendLine($"Total Revenue,{summary.TotalRevenue}");
+        sb.AppendLine($"Consultation Revenue,{summary.ConsultationRevenue}");
+        sb.AppendLine($"Lab Revenue,{summary.LabRevenue}");
+        sb.AppendLine($"Pharmacy Revenue,{summary.PharmacyRevenue}");
+        sb.AppendLine($"Insurance Claims,{summary.InsuranceClaims}");
+        sb.AppendLine($"Insurance Amount,{summary.InsuranceAmount}");
+        sb.AppendLine($"Pending Payments,{summary.PendingPayments}");
+        sb.AppendLine($"Refunds Processed,{summary.RefundsProcessed}");
+        sb.AppendLine($"Total Doctors Available,{summary.TotalDoctorsAvailable}");
+        sb.AppendLine($"Average Wait Time (Mins),{summary.AverageWaitTimeMinutes}");
+        sb.AppendLine($"Average Consultation Time (Mins),{summary.AverageConsultationTimeMinutes}");
+        sb.AppendLine($"Peak Hour,{summary.PeakHour}");
+        sb.AppendLine($"Slowest Hour,{summary.SlowestHour}");
+
+        return File(System.Text.Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", $"summary_{summary.Date:yyyyMMdd}.csv");
+    }
+
+    [HttpGet("daily-summary/compare")]
+    [ProducesResponseType(200)]
+    public async Task<IActionResult> CompareDailySummary([FromQuery] DateTime date1, [FromQuery] DateTime date2, CancellationToken ct = default)
+    {
+        var summary1 = await _adminService.GetDailySummaryAsync(date1, date1, ct);
+        var summary2 = await _adminService.GetDailySummaryAsync(date2, date2, ct);
+        
+        return Ok(new { 
+            success = true, 
+            data = new {
+                Period1 = summary1,
+                Period2 = summary2,
+                Differences = new {
+                    RevenueChange = summary2.TotalRevenue - summary1.TotalRevenue,
+                    AppointmentsChange = summary2.TotalAppointments - summary1.TotalAppointments
+                }
+            } 
+        });
     }
 
     /// <summary>Get all users with optional role filter.</summary>
@@ -98,7 +154,7 @@ public class AdminController : ControllerBase
 
     /// <summary>Update user's email.</summary>
     [HttpPut("users/{id:guid}/email")]
-    [ProducesResponseType(204)]
+    [ProducesResponseType(204)] //No content
     public async Task<IActionResult> UpdateUserEmail(Guid id, [FromBody] UpdateUserEmailRequestDto request, CancellationToken ct)
     {
         await _adminService.UpdateUserEmailAsync(id, request, ct);
@@ -194,5 +250,17 @@ public class AdminController : ControllerBase
     {
         var doctorId = await _adminService.CreateDoctorProfileAsync(request, ct);
         return Created("", new { success = true, doctorId });
+    }
+
+    /// <summary>Get login history for a specific user.</summary>
+    [HttpGet("users/{id:guid}/login-history")]
+    public async Task<IActionResult> GetUserLoginHistory(
+        Guid id,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        var result = await _authService.GetUserLoginHistoryAsync(id, pageNumber, pageSize, ct);
+        return Ok(new { success = true, data = result });
     }
 }

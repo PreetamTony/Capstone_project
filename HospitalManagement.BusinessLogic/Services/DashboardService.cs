@@ -2,6 +2,7 @@ using HospitalManagement.BusinessLogic.DTOs.Dashboard;
 using HospitalManagement.BusinessLogic.Services.Interfaces;
 using HospitalManagement.DataAccess.Exceptions;
 using HospitalManagement.DataAccess.Models.Enums;
+using HospitalManagement.DataAccess.Models.Enums.Billing;
 using HospitalManagement.DataAccess.Repositories;
 using Microsoft.EntityFrameworkCore;
 
@@ -28,13 +29,13 @@ public class DashboardService : IDashboardService
             .CountAsync(ct);
 
         var pendingReports = await _uow.LabReports.Query()
-            .Where(r => r.Status == LabReportStatus.Pending)
+            .Where(r => r.Status == LabReportStatus.Ordered || r.Status == LabReportStatus.SampleCollected || r.Status == LabReportStatus.InProgress)
             .CountAsync(ct);
 
         // Calculate today's revenue from Paid bills
-        var billsToday = await _uow.Bills.Query()
-            .Where(b => b.Status == BillingStatus.Paid && b.CreatedAt.Date == today)
-            .SumAsync(b => b.Amount, ct);
+        var billsToday = await _uow.Invoices.Query()
+            .Where(b => b.Status == InvoiceStatus.Paid && b.CreatedAt.Date == today)
+            .SumAsync(b => b.TotalAmount, ct);
 
         return new AdminDashboardDto
         {
@@ -76,12 +77,12 @@ public class DashboardService : IDashboardService
             .Where(a => a.PatientId == patient.Id && a.AppointmentTime > today && a.Status != AppointmentStatus.Cancelled)
             .CountAsync(ct);
 
-        var unpaidBills = await _uow.Bills.Query()
-            .Where(b => b.PatientId == patient.Id && b.Status == BillingStatus.Pending)
+        var unpaidBills = await _uow.Invoices.Query()
+            .Where(b => b.PatientId == patient.Id && b.Status == InvoiceStatus.Pending)
             .CountAsync(ct);
 
         var newReports = await _uow.LabReports.Query()
-            .Where(r => r.Visit != null && r.Visit.PatientId == patient.Id && r.Status == LabReportStatus.Completed && r.CreatedAt >= today.AddDays(-7))
+            .Where(r => r.PatientId == patient.Id && r.Status == LabReportStatus.Completed && r.CreatedAt >= today.AddDays(-7))
             .CountAsync(ct);
 
         return new PatientDashboardDto

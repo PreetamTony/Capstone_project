@@ -42,6 +42,10 @@ public partial class AdminService
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
         _uow.Users.Update(user);
         await _uow.CompleteAsync(ct);
+        
+        // Trigger email notification
+        await _notificationService.NotifyPasswordResetAsync(user.Id, newPassword, ct);
+        
         return new ResetPasswordResponseDto { NewPassword = newPassword };
     }
 

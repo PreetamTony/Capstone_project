@@ -22,6 +22,78 @@ public class ScheduleService : IScheduleService
         _cache = cache;
     }
 
+    public async Task<List<DoctorScheduleDto>> CreateDoctorScheduleAsync(Guid doctorId, CreateScheduleRequestDto request, CancellationToken ct = default)
+    {
+        var doctor = await _uow.Doctors.GetByIdAsync(doctorId, ct) 
+            ?? throw new NotFoundException("Doctor", doctorId);
+
+        var schedules = new List<DoctorSchedule>();
+
+        foreach (var day in request.DaysOfWeek)
+        {
+            var schedule = new DoctorSchedule
+            {
+                DoctorId = doctorId,
+                DayOfWeek = day,
+                StartTime = request.StartTime,
+                EndTime = request.EndTime,
+                IsRecurring = request.IsRecurring,
+                ValidFrom = request.ValidFrom,
+                ValidTo = request.ValidTo
+            };
+
+            await _uow.DoctorSchedules.AddAsync(schedule, ct);
+            schedules.Add(schedule);
+        }
+
+        await _uow.CompleteAsync(ct);
+
+        return schedules.Select(s => new DoctorScheduleDto
+        {
+            Id = s.Id,
+            DoctorId = s.DoctorId,
+            DayOfWeek = s.DayOfWeek,
+            StartTime = s.StartTime,
+            EndTime = s.EndTime,
+            IsRecurring = s.IsRecurring,
+            ValidFrom = s.ValidFrom,
+            ValidTo = s.ValidTo
+        }).ToList();
+    }
+
+    public async Task UpdateDoctorScheduleAsync(Guid doctorId, Guid scheduleId, UpdateScheduleRequestDto request, CancellationToken ct = default)
+    {
+        var schedule = await _uow.DoctorSchedules.GetByIdAsync(scheduleId, ct)
+            ?? throw new NotFoundException("DoctorSchedule", scheduleId);
+
+        if (schedule.DoctorId != doctorId)
+            throw new BusinessRuleViolationException("InvalidDoctor", "Schedule does not belong to the specified doctor.");
+
+        schedule.DayOfWeek = request.DayOfWeek;
+        schedule.StartTime = request.StartTime;
+        schedule.EndTime = request.EndTime;
+        schedule.IsRecurring = request.IsRecurring;
+        schedule.ValidFrom = request.ValidFrom;
+        schedule.ValidTo = request.ValidTo;
+
+        _uow.DoctorSchedules.Update(schedule);
+        await _uow.CompleteAsync(ct);
+    }
+
+    public async Task DeleteDoctorScheduleAsync(Guid doctorId, Guid scheduleId, CancellationToken ct = default)
+    {
+        var schedule = await _uow.DoctorSchedules.GetByIdAsync(scheduleId, ct)
+            ?? throw new NotFoundException("DoctorSchedule", scheduleId);
+
+        if (schedule.DoctorId != doctorId)
+            throw new BusinessRuleViolationException("InvalidDoctor", "Schedule does not belong to the specified doctor.");
+
+        schedule.IsDeleted = true;
+        
+        _uow.DoctorSchedules.Update(schedule);
+        await _uow.CompleteAsync(ct);
+    }
+
     public async Task<List<TimeSlotDto>> GetAvailableSlotsAsync(Guid doctorId, DateTime date, CancellationToken ct = default)
     {
         var cacheKey = $"AvailableSlots_{doctorId}_{date:yyyyMMdd}";

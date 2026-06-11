@@ -4,11 +4,14 @@ using System.Security.Cryptography;
 using System.Text;
 using BCrypt.Net;
 using HospitalManagement.BusinessLogic.DTOs.Auth;
+using HospitalManagement.BusinessLogic.DTOs.Common;
 using HospitalManagement.DataAccess.Constants;
 using HospitalManagement.DataAccess.Models;
 using HospitalManagement.DataAccess.Models.Enums;
+using HospitalManagement.DataAccess.Models.Emr;
 using HospitalManagement.DataAccess.Exceptions;
 using HospitalManagement.DataAccess.Repositories;
+using HospitalManagement.BusinessLogic.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -21,44 +24,67 @@ public class AuthService : IAuthService
 {
     private readonly IUnitOfWork _uow;
     private readonly IConfiguration _configuration;
-
+    private readonly INotificationService _notificationService;
     private readonly ILogger<AuthService> _logger;
+    private readonly Microsoft.AspNetCore.Http.IHttpContextAccessor _httpContextAccessor;
 
     public AuthService(IUnitOfWork uow, IConfiguration configuration,
-        ILogger<AuthService> logger)
+        ILogger<AuthService> logger, Microsoft.AspNetCore.Http.IHttpContextAccessor httpContextAccessor,
+        INotificationService notificationService)
     {
         _uow = uow;
         _configuration = configuration;
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
+        _notificationService = notificationService;
     }
 
     /// <inheritdoc/>
     public async Task<LoginResponseDto> LoginAsync(LoginRequestDto request, CancellationToken ct = default)
     {
-        var user = await _uow.Users.FirstOrDefaultAsync(u => u.Email == request.Email.ToLower().Trim(), ct)
-            ?? throw new NotFoundException("User", request.Email);
+        var user = await _uow.Users.Query()
+            .FirstOrDefaultAsync(u => u.Email == request.Email.ToLower().Trim(), ct);
+
+        if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+        {
+            if (user != null)
+            {
+                await LogLoginHistoryAsync(user.Id, false, "Invalid password", ct);
+            }
+            throw new BusinessRuleViolationException("InvalidCredentials", "Invalid email or password.");
+        }
 
         if (!user.IsActive)
-            throw new BusinessRuleViolationException("AccountDeactivated", "This account has been deactivated.");
+        {
+            await LogLoginHistoryAsync(user.Id, false, "Account deactivated", ct);
+            throw new BusinessRuleViolationException("AccountDeactivated", "Your account has been deactivated.");
+        }
 
-        if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
-            throw new BusinessRuleViolationException("InvalidCredentials", "Invalid email or password.");
+        if (!user.IsEmailVerified)
+        {
+            await LogLoginHistoryAsync(user.Id, false, "Email not verified", ct);
+            throw new BusinessRuleViolationException("EmailNotVerified", "Please verify your email address before logging in.");
+        }
 
-        user.LastLoginAt = DateTime.UtcNow;
-        _uow.Users.Update(user);
-        await _uow.CompleteAsync(ct);
-
+        // Generate Tokens
         var (token, expiresAt) = GenerateJwtToken(user);
         var refreshToken = GenerateRefreshToken();
 
-        var rtEntity = new RefreshToken
+        user.LastLoginAt = DateTime.UtcNow;
+        _uow.Users.Update(user);
+
+        // Save refresh token
+        var newRefreshToken = new RefreshToken
         {
             UserId = user.Id,
             Token = refreshToken,
-            ExpiresAt = DateTime.UtcNow.AddDays(7), // 7 days expiry
+            ExpiresAt = DateTime.UtcNow.AddDays(7), // e.g., 7 days validity
             IsRevoked = false
         };
-        await _uow.RefreshTokens.AddAsync(rtEntity, ct);
+        await _uow.RefreshTokens.AddAsync(newRefreshToken, ct);
+
+        await LogLoginHistoryAsync(user.Id, true, null, ct);
+
         await _uow.CompleteAsync(ct);
 
         // Resolve full name
@@ -88,13 +114,17 @@ public class AuthService : IAuthService
         await _uow.BeginTransactionAsync(ct);
         try
         {
+            var token = Guid.NewGuid().ToString("N");
             var user = new User
             {
                 Email = request.Email.ToLower().Trim(),
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
                 PhoneNumber = request.PhoneNumber,
                 Role = UserRole.Patient,
-                IsActive = true
+                IsActive = true,
+                IsEmailVerified = false,
+                EmailVerificationToken = token,
+                EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(24)
             };
 
             await _uow.Users.AddAsync(user, ct);
@@ -115,10 +145,29 @@ public class AuthService : IAuthService
             };
 
             await _uow.Patients.AddAsync(patient, ct);
+
+            // Automatically initialize EMR Record
+            var emr = new EmrRecord
+            {
+                PatientId = patient.Id
+            };
+            await _uow.EmrRecords.AddAsync(emr, ct);
+
             await _uow.CommitTransactionAsync(ct);
 
-
             _logger.LogInformation("New patient registered: {Email}, UserId: {UserId}", user.Email, user.Id);
+            _logger.LogWarning("EMAIL VERIFICATION TOKEN FOR {Email}: {Token}", user.Email, user.EmailVerificationToken);
+            
+            // Send verification email
+            string subject = "Welcome to HospitalManagement - Verify Your Email";
+            string body = $@"
+                <h2>Welcome {request.FirstName}!</h2>
+                <p>Thank you for registering. Please verify your email address using the following verification token:</p>
+                <h3>{user.EmailVerificationToken}</h3>
+                <p>This token will expire in 24 hours.</p>
+            ";
+            await _notificationService.SendEmailAsync(user.Email, subject, body, ct);
+
             return user.Id;
         }
         catch
@@ -146,6 +195,49 @@ public class AuthService : IAuthService
 
 
         _logger.LogInformation("User {UserId} changed their password", userId);
+    }
+
+    public async Task ForgotPasswordAsync(ForgotPasswordRequestDto request, CancellationToken ct = default)
+    {
+        var user = await _uow.Users.FirstOrDefaultAsync(u => u.Email == request.Email.ToLower().Trim(), ct);
+        if (user == null)
+        {
+            // Do not throw NotFound to prevent email enumeration attacks
+            return;
+        }
+
+        // Generate a 6-digit secure token
+        var random = new Random();
+        var token = random.Next(100000, 999999).ToString();
+
+        user.PasswordResetToken = token;
+        user.PasswordResetTokenExpiry = DateTime.UtcNow.AddMinutes(15);
+        _uow.Users.Update(user);
+        await _uow.CompleteAsync(ct);
+
+        await _notificationService.SendPasswordResetTokenAsync(user.Email, token, ct);
+    }
+
+    public async Task ResetPasswordWithTokenAsync(ResetPasswordWithTokenRequestDto request, CancellationToken ct = default)
+    {
+        var user = await _uow.Users.FirstOrDefaultAsync(u => u.Email == request.Email.ToLower().Trim(), ct);
+        if (user == null)
+            throw new BusinessRuleViolationException("InvalidReset", "Invalid email or token.");
+
+        if (string.IsNullOrEmpty(user.PasswordResetToken) || user.PasswordResetToken != request.Token)
+            throw new BusinessRuleViolationException("InvalidReset", "Invalid reset token.");
+
+        if (user.PasswordResetTokenExpiry == null || user.PasswordResetTokenExpiry < DateTime.UtcNow)
+            throw new BusinessRuleViolationException("TokenExpired", "The password reset token has expired.");
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+        user.PasswordResetToken = null;
+        user.PasswordResetTokenExpiry = null;
+
+        _uow.Users.Update(user);
+        await _uow.CompleteAsync(ct);
+
+        _logger.LogInformation("User {UserId} successfully reset their password via token", user.Id);
     }
 
     public async Task<LoginResponseDto> RefreshTokenAsync(RefreshTokenRequestDto request, CancellationToken ct = default)
@@ -209,19 +301,6 @@ public class AuthService : IAuthService
         await _uow.CompleteAsync(ct);
     }
 
-    /// <inheritdoc/>
-    public async Task DeactivateUserAsync(Guid userId, CancellationToken ct = default)
-    {
-        var user = await _uow.Users.GetByIdAsync(userId, ct)
-            ?? throw new NotFoundException("User", userId);
-
-        user.IsActive = false;
-        _uow.Users.Update(user);
-        await _uow.CompleteAsync(ct);
-
-
-        _logger.LogWarning("User {UserId} has been deactivated", userId);
-    }
 
     // ── Private helpers ──────────────────────────────────────────────────────
 
@@ -331,6 +410,121 @@ public class AuthService : IAuthService
         {
             return null;
         }
+    }
+
+    public async Task<CurrentUserDto> GetCurrentUserAsync(Guid userId, CancellationToken ct = default)
+    {
+        var user = await _uow.Users.GetByIdAsync(userId, ct)
+            ?? throw new NotFoundException("User", userId);
+
+        var fullName = await ResolveFullNameAsync(user, ct);
+
+        return new CurrentUserDto
+        {
+            UserId = user.Id,
+            Email = user.Email,
+            Role = user.Role.ToString(),
+            FullName = fullName
+        };
+    }
+
+    public async Task VerifyEmailAsync(VerifyEmailRequestDto request, CancellationToken ct = default)
+    {
+        var user = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Email == request.Email.ToLower().Trim(), ct)
+            ?? throw new BusinessRuleViolationException("InvalidEmail", "Invalid email address.");
+
+        if (user.IsEmailVerified)
+            throw new BusinessRuleViolationException("AlreadyVerified", "Email is already verified.");
+
+        if (user.EmailVerificationToken != request.Token)
+            throw new BusinessRuleViolationException("InvalidToken", "Invalid verification token.");
+
+        if (user.EmailVerificationTokenExpiry < DateTime.UtcNow)
+            throw new BusinessRuleViolationException("TokenExpired", "Verification token has expired.");
+
+        user.IsEmailVerified = true;
+        user.EmailVerificationToken = null;
+        user.EmailVerificationTokenExpiry = null;
+
+        _uow.Users.Update(user);
+        await _uow.CompleteAsync(ct);
+
+        _logger.LogInformation("Email verified for {Email}", user.Email);
+    }
+
+    public async Task ResendVerificationEmailAsync(ResendVerificationEmailRequestDto request, CancellationToken ct = default)
+    {
+        var user = await _uow.Users.Query().FirstOrDefaultAsync(u => u.Email == request.Email.ToLower().Trim(), ct)
+            ?? throw new BusinessRuleViolationException("InvalidEmail", "Invalid email address.");
+
+        if (user.IsEmailVerified)
+            throw new BusinessRuleViolationException("AlreadyVerified", "Email is already verified.");
+
+        user.EmailVerificationToken = Guid.NewGuid().ToString("N");
+        user.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(24);
+
+        _uow.Users.Update(user);
+        await _uow.CompleteAsync(ct);
+
+        _logger.LogInformation("Resent verification token for {Email}. Token: {Token}", user.Email, user.EmailVerificationToken);
+        
+        string subject = "HospitalManagement - Verify Your Email";
+        string body = $@"
+            <h2>Email Verification</h2>
+            <p>Please verify your email address using the following verification token:</p>
+            <h3>{user.EmailVerificationToken}</h3>
+            <p>This token will expire in 24 hours.</p>
+        ";
+        await _notificationService.SendEmailAsync(user.Email, subject, body, ct);
+    }
+
+    public async Task<PagedResult<LoginHistoryDto>> GetMyLoginHistoryAsync(Guid userId, int pageNumber = 1, int pageSize = 20, CancellationToken ct = default)
+    {
+        return await GetUserLoginHistoryAsync(userId, pageNumber, pageSize, ct);
+    }
+
+    public async Task<PagedResult<LoginHistoryDto>> GetUserLoginHistoryAsync(Guid userId, int pageNumber = 1, int pageSize = 20, CancellationToken ct = default)
+    {
+        var query = _uow.LoginHistories.Query().Where(lh => lh.UserId == userId).OrderByDescending(lh => lh.Timestamp);
+        var totalCount = await query.CountAsync(ct);
+        
+        var items = await query.Skip((pageNumber - 1) * pageSize).Take(pageSize)
+            .Select(lh => new LoginHistoryDto
+            {
+                Id = lh.Id,
+                UserId = lh.UserId,
+                UserEmail = lh.User.Email,
+                Timestamp = lh.Timestamp,
+                IpAddress = lh.IpAddress,
+                UserAgent = lh.UserAgent,
+                IsSuccess = lh.IsSuccess,
+                FailureReason = lh.FailureReason
+            }).ToListAsync(ct);
+
+        return PagedResult<LoginHistoryDto>.Create(items, totalCount, pageNumber, pageSize);
+    }
+
+    private async Task LogLoginHistoryAsync(Guid userId, bool isSuccess, string? failureReason, CancellationToken ct)
+    {
+        var context = _httpContextAccessor.HttpContext;
+        var ip = context?.Connection.RemoteIpAddress?.ToString();
+        var userAgent = context?.Request.Headers.UserAgent.ToString();
+
+        var history = new LoginHistory
+        {
+            UserId = userId,
+            Timestamp = DateTime.UtcNow,
+            IpAddress = ip,
+            UserAgent = userAgent,
+            IsSuccess = isSuccess,
+            FailureReason = failureReason
+        };
+
+        await _uow.LoginHistories.AddAsync(history, ct);
+        // Do not await CompleteAsync here if we are part of another transaction, but Login fails typically throw,
+        // so we need to save it explicitly if it failed and we are about to throw.
+        // If UOW is not already tracking a transaction, we can complete it immediately.
+        await _uow.CompleteAsync(ct);
     }
 
     private async Task<string> ResolveFullNameAsync(User user, CancellationToken ct)

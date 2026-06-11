@@ -1,5 +1,7 @@
 using HospitalManagement.DataAccess.Context;
 using HospitalManagement.DataAccess.Models;
+using HospitalManagement.DataAccess.Models.Emr;
+using HospitalManagement.DataAccess.Models.Billing;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace HospitalManagement.DataAccess.Repositories;
@@ -20,13 +22,23 @@ public class UnitOfWork : IUnitOfWork
     private IRepository<Appointment>? _appointments;
     private IVisitRepository? _visits;
     private IRepository<Prescription>? _prescriptions;
+    private IRepository<PrescriptionItem>? _prescriptionItems;
     private IRepository<LabReport>? _labReports;
-    private IRepository<Billing>? _bills;
+    private IRepository<Invoice>? _invoices;
+    private IRepository<InvoiceItem>? _invoiceItems;
+    private IRepository<Payment>? _payments;
+    private IRepository<Refund>? _refunds;
+    private IRepository<BillingAudit>? _billingAudits;
     private IRepository<Document>? _documents;
     private IRepository<InsuranceClaim>? _insuranceClaims;
     private IRepository<DoctorReview>? _doctorReviews;
     private IRepository<SystemSetting>? _systemSettings;
     private IEmrRepository? _emrRecords;
+    private IRepository<Allergy>? _allergies;
+    private IRepository<MedicalHistory>? _medicalHistories;
+    private IRepository<Vitals>? _vitals;
+    private IRepository<Immunization>? _immunizations;
+    private IRepository<EmrDocument>? _emrDocuments;
     private IRepository<QueueEntry>? _queueEntries;
     private IRepository<DoctorSchedule>? _doctorSchedules;
     private IRepository<DoctorLeave>? _doctorLeaves;
@@ -58,12 +70,25 @@ public class UnitOfWork : IUnitOfWork
     public IRepository<Appointment> Appointments => _appointments ??= new GenericRepository<Appointment>(_context);
     public IVisitRepository Visits => _visits ??= new VisitRepository(_context);
     public IRepository<Prescription> Prescriptions => _prescriptions ??= new GenericRepository<Prescription>(_context);
+    public IRepository<PrescriptionItem> PrescriptionItems => _prescriptionItems ??= new GenericRepository<PrescriptionItem>(_context);
 
     public IRepository<LabReport> LabReports
         => _labReports ??= new GenericRepository<LabReport>(_context);
 
-    public IRepository<Billing> Bills
-        => _bills ??= new GenericRepository<Billing>(_context);
+    public IRepository<Invoice> Invoices
+        => _invoices ??= new GenericRepository<Invoice>(_context);
+        
+    public IRepository<InvoiceItem> InvoiceItems
+        => _invoiceItems ??= new GenericRepository<InvoiceItem>(_context);
+        
+    public IRepository<Payment> Payments
+        => _payments ??= new GenericRepository<Payment>(_context);
+        
+    public IRepository<Refund> Refunds
+        => _refunds ??= new GenericRepository<Refund>(_context);
+        
+    public IRepository<BillingAudit> BillingAudits
+        => _billingAudits ??= new GenericRepository<BillingAudit>(_context);
 
     public IRepository<Document> Documents 
         => _documents ??= new GenericRepository<Document>(_context);
@@ -79,6 +104,16 @@ public class UnitOfWork : IUnitOfWork
 
     public IEmrRepository EmrRecords
         => _emrRecords ??= new EmrRepository(_context);
+    public IRepository<Allergy> Allergies
+        => _allergies ??= new GenericRepository<Allergy>(_context);
+    public IRepository<MedicalHistory> MedicalHistories
+        => _medicalHistories ??= new GenericRepository<MedicalHistory>(_context);
+    public IRepository<Vitals> Vitals
+        => _vitals ??= new GenericRepository<Vitals>(_context);
+    public IRepository<Immunization> Immunizations
+        => _immunizations ??= new GenericRepository<Immunization>(_context);
+    public IRepository<EmrDocument> EmrDocuments
+        => _emrDocuments ??= new GenericRepository<EmrDocument>(_context);
 
     // Phase 4
     public IRepository<QueueEntry> QueueEntries => _queueEntries ??= new GenericRepository<QueueEntry>(_context);
@@ -91,6 +126,9 @@ public class UnitOfWork : IUnitOfWork
     
     private IRepository<Notification>? _notifications;
     public IRepository<Notification> Notifications => _notifications ??= new GenericRepository<Notification>(_context);
+    
+    private IRepository<VisitHistory>? _visitHistories;
+    public IRepository<VisitHistory> VisitHistories => _visitHistories ??= new GenericRepository<VisitHistory>(_context);
     public IRepository<DoctorSchedule> DoctorSchedules 
         => _doctorSchedules ??= new GenericRepository<DoctorSchedule>(_context);
     public IRepository<DoctorLeave> DoctorLeaves 
@@ -114,6 +152,12 @@ public class UnitOfWork : IUnitOfWork
 
     // Chat
     public IRepository<ChatMessage> ChatMessages => _chatMessages ??= new GenericRepository<ChatMessage>(_context);
+
+    public IQueryable<AuditLog> AuditLogs => _context.AuditLogs.AsQueryable();
+
+    // Auth
+    private IRepository<LoginHistory>? _loginHistories;
+    public IRepository<LoginHistory> LoginHistories => _loginHistories ??= new GenericRepository<LoginHistory>(_context);
 
     /// <inheritdoc/>
     public async Task<int> CompleteAsync(CancellationToken ct = default)

@@ -5,11 +5,10 @@ namespace HospitalManagement.BusinessLogic.Services.Interfaces;
 
 public interface IVisitService
 {
-    Task<VisitDto> StartVisitAsync(StartVisitRequestDto request, CancellationToken ct = default);
-    Task<VisitDto> UpdateVisitAsync(Guid visitId, UpdateVisitRequestDto request, CancellationToken ct = default);
-    Task<VisitDto> DischargeVisitAsync(Guid visitId, CancellationToken ct = default);
-    Task<VisitDto> CancelVisitAsync(Guid visitId, CancellationToken ct = default);
-    Task<VisitDto> GetVisitByIdAsync(Guid visitId, CancellationToken ct = default);
-    Task<PagedResult<VisitDto>> GetVisitsByPatientAsync(Guid patientId, PaginationFilter filter, CancellationToken ct = default);
-    Task<PagedResult<VisitDto>> GetVisitsByDoctorAsync(Guid doctorId, PaginationFilter filter, CancellationToken ct = default);
+    Task<VisitDetailsDto> StartVisitAsync(Guid appointmentId, StartVisitRequestDto request, CancellationToken ct = default);
+    Task<VisitDetailsDto> DischargeVisitAsync(Guid visitId, CancellationToken ct = default);
+    Task<VisitDetailsDto> CancelVisitAsync(Guid visitId, CancelVisitRequestDto request, CancellationToken ct = default);
+    Task<VisitDetailsDto> GetVisitByIdAsync(Guid visitId, CancellationToken ct = default);
+    Task<PagedResult<VisitSummaryDto>> GetVisitsAsync(VisitFilterDto filter, CancellationToken ct = default);
+    Task<List<VisitHistoryDto>> GetVisitHistoryAsync(Guid visitId, CancellationToken ct = default);
 }

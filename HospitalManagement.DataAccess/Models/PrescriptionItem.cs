@@ -1,0 +1,19 @@
+using HospitalManagement.DataAccess.Models.Enums;
+
+namespace HospitalManagement.DataAccess.Models;
+
+public class PrescriptionItem : BaseEntity
+{
+    public Guid PrescriptionId { get; set; }
+    public Prescription Prescription { get; set; } = null!;
+
+    public string MedicationName { get; set; } = string.Empty;
+    public string Strength { get; set; } = string.Empty;
+    public string Dosage { get; set; } = string.Empty;
+    public string Frequency { get; set; } = string.Empty;
+    public int DurationDays { get; set; }
+    public string? Instructions { get; set; }
+    public int Quantity { get; set; }
+
+    public bool IsDispensed { get; set; } = false;
+}

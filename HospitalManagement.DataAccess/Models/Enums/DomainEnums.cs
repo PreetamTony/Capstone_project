@@ -15,7 +15,9 @@ public enum AppointmentStatus
 public enum ConsultationStatus
 {
     Draft = 0,
-    Completed = 1
+    InProgress = 1,
+    Completed = 2,
+    Cancelled = 3
 }
 
 public enum AppointmentType
@@ -23,6 +25,15 @@ public enum AppointmentType
     InPerson = 0,
     Video = 1,
     Phone = 2
+}
+
+public enum AppointmentSource
+{
+    PatientPortal = 0,
+    Receptionist = 1,
+    Doctor = 2,
+    Admin = 3,
+    MobileApp = 4
 }
 
 public enum AppointmentPriority
@@ -36,18 +47,31 @@ public enum AppointmentPriority
 public enum QueueStatus
 {
     Waiting = 0,
-    InConsultation = 1,
-    Completed = 2,
-    Skipped = 3,
-    NoShow = 4
+    Called = 1,
+    InConsultation = 2,
+    Completed = 3,
+    Skipped = 4,
+    NoShow = 5
 }
 
 public enum LabReportStatus
 {
-    Pending = 0,
-    Completed = 1,
-    Abnormal = 2,
-    Reviewed = 3
+    Ordered,
+    SampleCollected,
+    InProgress,
+    Completed,
+    Reviewed,
+    Cancelled
+}
+
+public enum PrescriptionStatus
+{
+    Draft = 0,
+    Active = 1,
+    Dispensed = 2,
+    PartiallyDispensed = 3,
+    Cancelled = 4,
+    Expired = 5
 }
 
 public enum BillingStatus
@@ -55,7 +79,16 @@ public enum BillingStatus
     Pending = 0,
     Paid = 1,
     Refunded = 2,
-    WrittenOff = 3
+    WrittenOff = 3,
+    RefundRequested = 4
+}
+
+public enum InsuranceClaimStatus
+{
+    Pending,
+    Approved,
+    Rejected,
+    PartiallyApproved
 }
 
 public enum BillingCategory

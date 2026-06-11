@@ -1,4 +1,5 @@
 using HospitalManagement.BusinessLogic.DTOs.Emr;
+using HospitalManagement.DataAccess.Models;
 using HospitalManagement.BusinessLogic.Services.Interfaces;
 using HospitalManagement.DataAccess.Exceptions;
 using HospitalManagement.DataAccess.Models.Emr;
@@ -7,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HospitalManagement.BusinessLogic.Services;
 
-public class EmrService : IEmrService
+public partial class EmrService : IEmrService
 {
     private readonly IUnitOfWork _unitOfWork;
 
@@ -39,8 +40,10 @@ public class EmrService : IEmrService
         var visits = await _unitOfWork.Visits.Query()
             .Include(v => v.Doctor)
             .Include(v => v.Vitals)
-            .Include(v => v.Prescriptions)
-            .Include(v => v.LabReports)
+            .Include(v => v.Consultation!)
+                .ThenInclude(c => c.Prescriptions)
+            .Include(v => v.Consultation!)
+                .ThenInclude(c => c.LabReports)
             .Where(v => v.PatientId == patientId)
             .OrderByDescending(v => v.CheckInTime)
             .ToListAsync(ct);
@@ -66,17 +69,17 @@ public class EmrService : IEmrService
                 DischargeTime = v.DischargeTime,
                 DoctorName = v.Doctor != null ? $"Dr. {v.Doctor.FirstName} {v.Doctor.LastName}" : string.Empty,
                 ChiefComplaint = v.ChiefComplaint ?? string.Empty,
-                Diagnosis = v.Diagnosis ?? string.Empty,
+                Diagnosis = v.Consultation?.Diagnosis ?? string.Empty,
                 TreatmentPlan = string.Empty,
-                Notes = v.ClinicalNotes ?? string.Empty,
+                Notes = v.Notes ?? string.Empty,
                 Vitals = v.Vitals.FirstOrDefault() != null ? new VitalsDto
                 {
                     HeartRate = v.Vitals.First().HeartRate,
                     BloodPressure = v.Vitals.First().BloodPressure,
                     Temperature = v.Vitals.First().Temperature
                 } : null,
-                PrescribedMedications = v.Prescriptions.Select(p => $"{p.MedicationName} - {p.Dosage}").ToList(),
-                LabReports = v.LabReports.Select(l => $"{l.ReportName} ({l.Status})").ToList()
+                PrescribedMedications = (v.Consultation?.Prescriptions ?? new List<Prescription>()).SelectMany(p => p.Items).Select(i => $"{i.MedicationName} - {i.Dosage}").ToList(),
+                LabReports = (v.Consultation?.LabReports ?? new List<LabReport>()).Select(l => $"{l.ReportName} ({l.Status})").ToList()
             }).ToList()
         };
     }

@@ -4,6 +4,7 @@ using HospitalManagement.BusinessLogic.Services;
 using HospitalManagement.DataAccess.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace HospitalManagement.Presentation.Controllers;
 
@@ -25,6 +26,7 @@ public class AuthController : ControllerBase
     /// <summary>Login and receive a JWT token.</summary>
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("AuthPolicy")]
     [ProducesResponseType(typeof(LoginResponseDto), 200)]
     [ProducesResponseType(400)]
     [ProducesResponseType(404)]
@@ -37,12 +39,13 @@ public class AuthController : ControllerBase
     /// <summary>Register a new patient account.</summary>
     [HttpPost("register")]
     [AllowAnonymous]
+    [EnableRateLimiting("AuthPolicy")]
     [ProducesResponseType(201)]
     [ProducesResponseType(400)]
     public async Task<IActionResult> Register([FromBody] RegisterRequestDto request, CancellationToken ct)
     {
         var userId = await _authService.RegisterAsync(request, ct);
-        return CreatedAtAction(nameof(Login), new { success = true, userId });
+        return CreatedAtAction(nameof(GetCurrentUser), new { }, new { success = true, userId });
     }
 
     /// <summary>Change the current user's password.</summary>
@@ -58,6 +61,49 @@ public class AuthController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Verify an email address.</summary>
+    [HttpPost("verify-email")]
+    [AllowAnonymous]
+    public async Task<IActionResult> VerifyEmail([FromBody] VerifyEmailRequestDto request, CancellationToken ct)
+    {
+        await _authService.VerifyEmailAsync(request, ct);
+        return Ok(new { success = true, message = "Email verified successfully." });
+    }
+
+    /// <summary>Resend verification email.</summary>
+    [HttpPost("resend-verification")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResendVerificationEmail([FromBody] ResendVerificationEmailRequestDto request, CancellationToken ct)
+    {
+        await _authService.ResendVerificationEmailAsync(request, ct);
+        return Ok(new { success = true, message = "Verification email sent." });
+    }
+
+    /// <summary>Get login history for the current user.</summary>
+    [HttpGet("login-history")]
+    [Authorize]
+    public async Task<IActionResult> GetMyLoginHistory(
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        var userId = GetCurrentUserId();
+        var result = await _authService.GetMyLoginHistoryAsync(userId, pageNumber, pageSize, ct);
+        return Ok(new { success = true, data = result });
+    }
+
+    /// <summary>Get current user profile data.</summary>
+    [HttpGet("me")]
+    [Authorize]
+    [ProducesResponseType(typeof(CurrentUserDto), 200)]
+    [ProducesResponseType(401)]
+    public async Task<IActionResult> GetCurrentUser(CancellationToken ct)
+    {
+        var userId = GetCurrentUserId();
+        var result = await _authService.GetCurrentUserAsync(userId, ct);
+        return Ok(result); // Return the raw object directly as requested: { "userId": "...", "email": "..." }
+    }
+
     /// <summary>Refresh an expired JWT token.</summary>
     [HttpPost("refresh")]
     [AllowAnonymous]
@@ -67,6 +113,27 @@ public class AuthController : ControllerBase
     {
         var result = await _authService.RefreshTokenAsync(request, ct);
         return Ok(new { success = true, data = result });
+    }
+
+    /// <summary>Request a password reset email.</summary>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(200)]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequestDto request, CancellationToken ct)
+    {
+        await _authService.ForgotPasswordAsync(request, ct);
+        // Always return success to prevent email enumeration
+        return Ok(new { success = true, message = "If the email exists, a password reset token has been sent." });
+    }
+
+    /// <summary>Reset password using the emailed token.</summary>
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(200)]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordWithTokenRequestDto request, CancellationToken ct)
+    {
+        await _authService.ResetPasswordWithTokenAsync(request, ct);
+        return Ok(new { success = true, message = "Password has been successfully reset." });
     }
 
     /// <summary>Revoke a refresh token (Logout).</summary>
@@ -79,17 +146,7 @@ public class AuthController : ControllerBase
         await _authService.RevokeTokenAsync(request, ct);
         return NoContent();
     }
-
-    /// <summary>Deactivate a user account (Admin only).</summary>
-    [HttpPost("deactivate/{userId:guid}")]
-    [Authorize(Roles = AppConstants.Roles.Admin)]
-    [ProducesResponseType(204)]
-    public async Task<IActionResult> Deactivate(Guid userId, CancellationToken ct)
-    {
-        await _authService.DeactivateUserAsync(userId, ct);
-        return NoContent();
-    }
-
+    
     private Guid GetCurrentUserId()
     {
         var id = User.FindFirstValue(AppConstants.Jwt.ClaimUserId)

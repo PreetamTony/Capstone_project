@@ -24,19 +24,18 @@ public class AppointmentsController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>Book a new appointment (Patient only).</summary>
+    /// <summary>Book a new appointment (Patient or Receptionist).</summary>
     [HttpPost]
-    [Authorize(Roles = AppConstants.Roles.Patient)]
-    [ProducesResponseType(typeof(AppointmentResponseDto), 201)]
+    [ProducesResponseType(typeof(AppointmentDetailsDto), 201)]
     public async Task<IActionResult> Book([FromBody] BookAppointmentRequestDto request, CancellationToken ct)
     {
-        var result = await _appointmentService.BookAppointmentAsync(GetCurrentUserId(), request, ct);
+        var result = await _appointmentService.BookAppointmentAsync(request, ct);
         return CreatedAtAction(nameof(GetById), new { id = result.Id }, new { success = true, data = result });
     }
 
     /// <summary>Get appointment by ID.</summary>
     [HttpGet("{id:guid}")]
-    [ProducesResponseType(typeof(AppointmentResponseDto), 200)]
+    [ProducesResponseType(typeof(AppointmentDetailsDto), 200)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
         var result = await _appointmentService.GetByIdAsync(id, ct);
@@ -46,66 +45,77 @@ public class AppointmentsController : ControllerBase
     /// <summary>Get available time slots for a doctor on a given date.</summary>
     [HttpGet("available-slots")]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(List<AvailableSlotResponseDto>), 200)]
+    [ProducesResponseType(typeof(AvailableSlotDto), 200)]
     public async Task<IActionResult> GetAvailableSlots([FromQuery] Guid doctorId, [FromQuery] DateTime date, CancellationToken ct)
     {
         var slots = await _appointmentService.GetAvailableSlotsAsync(doctorId, date, ct);
         return Ok(new { success = true, data = slots });
     }
 
-    /// <summary>Get current patient's appointments (paginated).</summary>
+    /// <summary>Get current patient's appointments (paginated & filtered).</summary>
     [HttpGet("patient/me")]
     [Authorize(Roles = AppConstants.Roles.Patient)]
-    [ProducesResponseType(typeof(PagedResult<AppointmentResponseDto>), 200)]
-    public async Task<IActionResult> GetMyAppointments([FromQuery] PaginationFilter filter, CancellationToken ct)
+    [ProducesResponseType(typeof(PagedResult<AppointmentSummaryDto>), 200)]
+    public async Task<IActionResult> GetMyAppointments([FromQuery] AppointmentFilterDto filter, CancellationToken ct)
     {
-        var result = await _appointmentService.GetPatientAppointmentsAsync(GetCurrentUserId(), filter, ct);
+        filter.PatientId = GetCurrentUserId(); // enforce patient ID to current user
+        var result = await _appointmentService.GetAppointmentsAsync(filter, ct);
         return Ok(new { success = true, data = result });
     }
 
     /// <summary>Get doctor's appointments (Doctor only).</summary>
     [HttpGet("doctor/me")]
     [Authorize(Roles = AppConstants.Roles.Doctor)]
-    [ProducesResponseType(typeof(PagedResult<AppointmentResponseDto>), 200)]
-    public async Task<IActionResult> GetDoctorAppointments([FromQuery] PaginationFilter filter, CancellationToken ct)
+    [ProducesResponseType(typeof(PagedResult<AppointmentSummaryDto>), 200)]
+    public async Task<IActionResult> GetDoctorAppointments([FromQuery] AppointmentFilterDto filter, CancellationToken ct)
     {
-        var result = await _appointmentService.GetDoctorAppointmentsAsync(GetCurrentUserId(), filter, ct);
+        filter.DoctorId = GetCurrentUserId(); // enforce doctor ID to current user
+        var result = await _appointmentService.GetAppointmentsAsync(filter, ct);
+        return Ok(new { success = true, data = result });
+    }
+
+    /// <summary>Get all appointments (Receptionist/Admin).</summary>
+    [HttpGet]
+    [Authorize(Roles = $"{AppConstants.Roles.Receptionist},{AppConstants.Roles.Admin}")]
+    [ProducesResponseType(typeof(PagedResult<AppointmentSummaryDto>), 200)]
+    public async Task<IActionResult> GetAllAppointments([FromQuery] AppointmentFilterDto filter, CancellationToken ct)
+    {
+        var result = await _appointmentService.GetAppointmentsAsync(filter, ct);
         return Ok(new { success = true, data = result });
     }
 
     /// <summary>Cancel an appointment.</summary>
     [HttpPut("{id:guid}/cancel")]
-    [ProducesResponseType(typeof(AppointmentResponseDto), 200)]
+    [ProducesResponseType(typeof(AppointmentDetailsDto), 200)]
     public async Task<IActionResult> Cancel(Guid id, [FromBody] CancelAppointmentRequestDto request, CancellationToken ct)
     {
-        var result = await _appointmentService.CancelAppointmentAsync(id, GetCurrentUserId(), request, ct);
+        var result = await _appointmentService.CancelAppointmentAsync(id, request, ct);
         return Ok(new { success = true, data = result });
     }
 
     /// <summary>Reschedule an appointment to a new time.</summary>
     [HttpPut("{id:guid}/reschedule")]
-    [ProducesResponseType(typeof(AppointmentResponseDto), 200)]
+    [ProducesResponseType(typeof(AppointmentDetailsDto), 200)]
     public async Task<IActionResult> Reschedule(Guid id, [FromBody] RescheduleAppointmentRequestDto request, CancellationToken ct)
     {
-        var result = await _appointmentService.RescheduleAppointmentAsync(id, GetCurrentUserId(), request, ct);
+        var result = await _appointmentService.RescheduleAppointmentAsync(id, request, ct);
         return Ok(new { success = true, data = result });
     }
 
     /// <summary>Confirm an appointment.</summary>
     [HttpPut("{id:guid}/confirm")]
     [Authorize(Roles = $"{AppConstants.Roles.Receptionist},{AppConstants.Roles.Admin}")]
-    [ProducesResponseType(204)]
-    [ProducesResponseType(400)]
+    [ProducesResponseType(typeof(AppointmentDetailsDto), 200)]
     public async Task<IActionResult> ConfirmAppointment(Guid id, CancellationToken ct)
     {
-        await _appointmentService.ConfirmAppointmentAsync(id, ct);
-        return NoContent();
+        var result = await _appointmentService.ConfirmAppointmentAsync(id, ct);
+        return Ok(new { success = true, data = result });
     }
 
     /// <summary>Check-in a patient (Receptionist or Doctor).</summary>
     [HttpPut("{id:guid}/check-in")]
     [Authorize(Roles = $"{AppConstants.Roles.Receptionist},{AppConstants.Roles.Doctor},{AppConstants.Roles.Admin}")]
-    [ProducesResponseType(typeof(AppointmentResponseDto), 200)]
+    [ProducesResponseType(typeof(AppointmentDetailsDto), 200)]
     public async Task<IActionResult> CheckIn(Guid id, CancellationToken ct)
     {
         var result = await _appointmentService.CheckInPatientAsync(id, ct);
@@ -115,7 +125,7 @@ public class AppointmentsController : ControllerBase
     /// <summary>Start appointment (Doctor only).</summary>
     [HttpPut("{id:guid}/start")]
     [Authorize(Roles = AppConstants.Roles.Doctor)]
-    [ProducesResponseType(typeof(AppointmentResponseDto), 200)]
+    [ProducesResponseType(typeof(AppointmentDetailsDto), 200)]
     public async Task<IActionResult> Start(Guid id, CancellationToken ct)
     {
         var result = await _appointmentService.StartAppointmentAsync(id, ct);
@@ -125,7 +135,7 @@ public class AppointmentsController : ControllerBase
     /// <summary>Complete appointment and auto-generate bill (Doctor only).</summary>
     [HttpPut("{id:guid}/complete")]
     [Authorize(Roles = AppConstants.Roles.Doctor)]
-    [ProducesResponseType(typeof(AppointmentResponseDto), 200)]
+    [ProducesResponseType(typeof(AppointmentDetailsDto), 200)]
     public async Task<IActionResult> Complete(Guid id, CancellationToken ct)
     {
         var result = await _appointmentService.CompleteAppointmentAsync(id, ct);
@@ -135,11 +145,11 @@ public class AppointmentsController : ControllerBase
     /// <summary>Mark appointment as no-show (Doctor/Receptionist).</summary>
     [HttpPut("{id:guid}/no-show")]
     [Authorize(Roles = $"{AppConstants.Roles.Doctor},{AppConstants.Roles.Receptionist},{AppConstants.Roles.Admin}")]
-    [ProducesResponseType(204)]
+    [ProducesResponseType(typeof(AppointmentDetailsDto), 200)]
     public async Task<IActionResult> MarkNoShow(Guid id, CancellationToken ct)
     {
-        await _appointmentService.MarkNoShowAsync(id, ct);
-        return NoContent();
+        var result = await _appointmentService.MarkNoShowAsync(id, ct);
+        return Ok(new { success = true, data = result });
     }
 
     private Guid GetCurrentUserId()

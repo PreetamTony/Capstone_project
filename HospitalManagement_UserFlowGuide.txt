@@ -1,0 +1,739 @@
+================================================================================
+🏥 COMPLETE USER FLOW GUIDE - ALL ROLES
+================================================================================
+
+📋 EXECUTIVE SUMMARY
+The platform supports 5 user roles 
+Below is the detailed flow for each role.
+
+👥 ALL ROLES IN THE SYSTEM
+--------------------------------------------------------------------------------
+| Role           | Primary Use                                    | Access       |
+|----------------|------------------------------------------------|--------------|
+| Patient        | Book appointments, view medical records, bills | Patient only |
+| Doctor         | Consult patients, prescribe meds, order labs   | Dr + Patient |
+| Admin          | Manage users, view audit logs, config system   | All endpoints|
+| Lab Technician | Process lab orders, upload reports             | Lab specific |
+| Receptionist   | Check-in patients, manage queue                | Recep + Appt |
+--------------------------------------------------------------------------------
+
+
+================================================================================
+👤 PATIENT FLOW - COMPLETE JOURNEY
+================================================================================
+
+Step 1: Account Creation
+---------------------------------------------------------
+1.1 Register Account
+[POST] /api/auth/register
+Purpose: Create new patient account
+Request Body:
+{
+  "email": "patient@example.com",
+  "password": "StrongP@ss123",
+  "phoneNumber": "+1234567890",
+  "firstName": "John",
+  "lastName": "Doe",
+  "dateOfBirth": "1990-05-15T00:00:00Z",
+  "gender": "Male",
+  "address": "123 Main St",
+  "emergencyContactName": "Jane Doe",
+  "emergencyContactPhone": "+1987654321",
+  "insuranceProvider": "Blue Cross",
+  "insurancePolicyNumber": "BC123456",
+  "insuranceCoveragePercent": 80
+}
+Response: 201 Created (No token - must verify email first)
+
+1.2 Verify Email
+[POST] /api/auth/verify-email
+Request Body:
+{
+  "email": "patient@example.com",
+  "token": "verification-token-from-email"
+}
+
+1.3 Login (Get Token)
+[POST] /api/auth/login
+Request Body:
+{
+  "email": "patient@example.com",
+  "password": "StrongP@ss123"
+}
+Response: Contains JWT token for all subsequent requests
+
+
+Step 2: Profile Management
+---------------------------------------------------------
+2.1 View My Profile
+[GET] /api/patients/me
+Purpose: See your personal information
+
+2.2 Update Profile
+[PUT] /api/patients/me
+Purpose: Update address, emergency contact, insurance
+
+2.3 Change Password
+[POST] /api/auth/change-password
+Request Body:
+{
+  "currentPassword": "StrongP@ss123",
+  "newPassword": "NewStrongP@ss456",
+  "confirmNewPassword": "NewStrongP@ss456"
+}
+
+2.4 Upload Document (ID proof, external reports)
+[POST] /api/documents
+Content-Type: multipart/form-data
+
+
+Step 3: Find a Doctor
+---------------------------------------------------------
+3.1 Search Doctors
+[GET] /api/search/doctors?searchTerm=Cardiology
+Purpose: Find doctors by specialization or name
+
+3.2 View Doctor Details
+[GET] /api/doctors/{doctorId}
+
+3.3 View Doctor Reviews
+[GET] /api/doctors/{doctorId}/reviews
+Purpose: See what other patients say
+
+
+Step 4: Book Appointment
+---------------------------------------------------------
+4.1 Check Available Slots
+[GET] /api/appointments/available-slots?doctorId={doctorId}&date=2026-06-15T00:00:00Z
+
+4.2 Book Appointment
+[POST] /api/appointments
+Request Body:
+{
+  "doctorId": "doctor-guid",
+  "appointmentTime": "2026-06-15T10:00:00Z",
+  "type": "InPerson",
+  "reason": "Chest pain",
+  "symptoms": ["Pain", "Shortness of breath"],
+  "priority": "Medium",
+  "patientId": "your-patient-id"
+}
+
+4.3 View My Appointments
+[GET] /api/appointments/patient/me?status=Scheduled
+
+4.4 Cancel Appointment
+[PUT] /api/appointments/{appointmentId}/cancel
+Request Body: { "reason": "Schedule conflict" }
+
+4.5 Reschedule Appointment
+[PUT] /api/appointments/{appointmentId}/reschedule
+Request Body: { "newAppointmentTime": "2026-06-16T14:00:00Z", "reason": "Work conflict" }
+
+
+Step 5: On Appointment Day
+---------------------------------------------------------
+5.1 Check Queue Position
+[GET] /api/Queue/my-position
+Purpose: See where you are in line
+
+5.2 View Display Board
+[GET] /api/Queue/display/{doctorId}
+Purpose: See current token being served
+
+
+Step 6: After Consultation
+---------------------------------------------------------
+6.1 View Prescriptions
+[GET] /api/prescriptions/patient/me
+
+6.2 View Specific Prescription
+[GET] /api/prescriptions/{prescriptionId}
+
+6.3 View Lab Reports
+[GET] /api/lab-reports/patient/me
+
+6.4 Download Lab Report
+[GET] /api/lab-reports/{reportId}/download
+
+6.5 Review Doctor
+[POST] /api/doctors/{doctorId}/reviews
+Request Body:
+{
+  "doctorId": "doctor-guid",
+  "patientId": "your-patient-id",
+  "rating": 5,
+  "comment": "Excellent doctor!"
+}
+
+
+Step 7: Medical Records (EMR)
+---------------------------------------------------------
+7.1 View EMR Summary
+[GET] /api/Emr/patient/{patientId}/summary
+
+7.2 View Full EMR
+[GET] /api/Emr/patient/{patientId}/full
+
+7.3 View Timeline
+[GET] /api/patients/{patientId}/timeline
+
+7.4 View Vitals History
+[GET] /api/Emr/patient/{patientId}/vitals/history
+
+7.5 View Immunizations
+[GET] /api/Emr/patient/{patientId}/immunizations
+
+7.6 Update Emergency Info
+[PUT] /api/Emr/patient/{patientId}/emergency-info
+
+
+Step 8: Billing & Payments
+---------------------------------------------------------
+8.1 View My Bills
+[GET] /api/billing/patient/me
+
+8.2 View Specific Bill
+[GET] /api/billing/{billId}
+
+8.3 Make Payment (Stripe)
+[POST] /api/billing/{billId}/create-payment-intent
+Response: Get clientSecret for Stripe frontend
+Then after frontend completes payment:
+[POST] /api/billing/{billId}/confirm-stripe-payment
+Request Body: { "paymentIntentId": "pi_xxx" }
+
+8.4 Download Invoice
+[GET] /api/billing/{billId}/invoice
+
+
+Step 9: Notifications
+---------------------------------------------------------
+9.1 View Notifications
+[GET] /api/notifications
+
+9.2 Get Unread Count
+[GET] /api/notifications/unread-count
+
+9.3 Mark as Read
+[PUT] /api/notifications/{notificationId}/read
+
+
+Step 10: Forgot Password
+---------------------------------------------------------
+10.1 Request Reset
+[POST] /api/auth/forgot-password
+Request Body: { "email": "patient@example.com" }
+
+10.2 Reset Password
+[POST] /api/auth/reset-password
+Request Body:
+{
+  "email": "patient@example.com",
+  "token": "reset-token-from-email",
+  "newPassword": "NewPassword123!",
+  "confirmNewPassword": "NewPassword123!"
+}
+
+
+================================================================================
+👨‍⚕️ DOCTOR FLOW - COMPLETE JOURNEY
+================================================================================
+
+Step 1: Account Setup (Admin creates)
+---------------------------------------------------------
+Admin creates doctor account:
+[POST] /api/admin/users
+Request Body:
+{
+  "email": "doctor@hospital.com",
+  "role": "Doctor",
+  "phoneNumber": "+1234567890"
+}
+
+Admin creates doctor profile:
+[POST] /api/admin/doctors
+Request Body:
+{
+  "userId": "user-guid",
+  "departmentId": "dept-guid",
+  "firstName": "Sarah",
+  "lastName": "Smith",
+  "specialization": "Cardiologist",
+  "qualification": "MD, DM Cardiology",
+  "experienceYears": 12,
+  "consultationFee": 1500
+}
+
+Doctor sets password (first login):
+Doctor uses "Forgot Password" or admin provides temporary password.
+
+
+Step 2: Doctor Login
+---------------------------------------------------------
+[POST] /api/auth/login
+Request Body:
+{
+  "email": "doctor@hospital.com",
+  "password": "temporary-or-set-password"
+}
+
+
+Step 3: Manage Schedule
+---------------------------------------------------------
+3.1 View Schedule
+[GET] /api/Schedules/doctor/{doctorId}
+
+3.2 Set Availability
+[POST] /api/Schedules/doctor/{doctorId}
+Request Body:
+{
+  "dayOfWeek": 1,
+  "startTime": "09:00:00",
+  "endTime": "17:00:00",
+  "isRecurring": true,
+  "validFrom": "2026-06-01T00:00:00Z",
+  "validTo": "2026-12-31T00:00:00Z"
+}
+
+3.3 Apply for Leave
+[POST] /api/Schedules/doctor/{doctorId}/leave
+Request Body:
+{
+  "leaveType": "Vacation",
+  "startDateTime": "2026-07-01T00:00:00Z",
+  "endDateTime": "2026-07-07T23:59:59Z",
+  "reason": "Annual vacation"
+}
+
+3.4 Block Time Slot
+[POST] /api/Schedules/doctor/{doctorId}/block
+Request Body:
+{
+  "startDateTime": "2026-06-15T14:00:00Z",
+  "endDateTime": "2026-06-15T16:00:00Z",
+  "blockReason": "Department Meeting",
+  "description": "Monthly staff meeting"
+}
+
+
+Step 4: View Appointments
+---------------------------------------------------------
+4.1 Today's Schedule
+[GET] /api/appointments/doctor/me?status=Scheduled,Confirmed&fromDate={today}&toDate={today}
+
+4.2 View Appointment Details
+[GET] /api/appointments/{appointmentId}
+
+
+Step 5: Manage Queue
+---------------------------------------------------------
+5.1 View Queue
+[GET] /api/Queue/doctor/me
+
+5.2 Call Next Patient
+[PUT] /api/Queue/doctor/me/call-next
+
+5.3 Skip Patient
+[PUT] /api/Queue/doctor/me/skip/{tokenNumber}
+
+5.4 Recall Patient
+[PUT] /api/Queue/doctor/me/recall/{tokenNumber}
+
+5.5 Mark No-Show
+[PUT] /api/Queue/{queueEntryId}/no-show
+
+
+Step 6: Start Consultation
+---------------------------------------------------------
+6.1 Start Appointment
+[PUT] /api/appointments/{appointmentId}/start
+
+6.2 Create Visit
+[POST] /api/appointments/{appointmentId}/visit
+
+
+Step 7: Consultation Notes
+---------------------------------------------------------
+7.1 Create Consultation
+[POST] /api/Consultations
+Request Body:
+{
+  "visitId": "visit-guid",
+  "chiefComplaint": "Chest pain for 3 days",
+  "symptoms": ["Pain radiating to left arm", "Shortness of breath"],
+  "assessment": "Patient appears anxious",
+  "diagnosis": "Angina",
+  "diagnosisCode": "I20.9",
+  "treatmentPlan": "Prescribed nitroglycerin",
+  "notes": "Patient advised to reduce stress",
+  "recommendations": "Follow up in 2 weeks",
+  "followUpInstructions": "Take medication as prescribed",
+  "followUpDate": "2026-06-25T00:00:00Z"
+}
+
+7.2 Update Consultation
+[PUT] /api/Consultations/{consultationId}
+
+7.3 Complete Consultation
+[POST] /api/Consultations/{consultationId}/complete
+
+
+Step 8: Add Vitals
+---------------------------------------------------------
+[POST] /api/Emr/patient/{patientId}/vitals
+Request Body:
+{
+  "visitId": "visit-guid",
+  "recordedAt": "2026-06-09T10:00:00Z",
+  "heartRate": 72,
+  "bloodPressure": "120/80",
+  "temperature": 98.6,
+  "respiratoryRate": 16,
+  "o2Saturation": 98,
+  "height": 175.5,
+  "weight": 72.3
+}
+
+
+Step 9: Create Prescription
+---------------------------------------------------------
+9.1 Create Prescription
+[POST] /api/prescriptions
+Request Body:
+{
+  "consultationId": "consultation-guid",
+  "notes": "Take with food"
+}
+
+9.2 Add Medications
+[POST] /api/prescriptions/{prescriptionId}/items
+Request Body:
+{
+  "medicationName": "Atorvastatin",
+  "strength": "20mg",
+  "dosage": "1 tablet",
+  "frequency": "Once daily",
+  "durationDays": 30,
+  "instructions": "Take at bedtime",
+  "quantity": 30
+}
+
+9.3 Finalize Prescription
+[POST] /api/prescriptions/{prescriptionId}/finalize
+
+9.4 Void Prescription (if needed)
+[POST] /api/prescriptions/{prescriptionId}/void
+Request Body: { "reason": "Patient allergic" }
+
+
+Step 10: Order Lab Tests
+---------------------------------------------------------
+[POST] /api/lab-orders
+Request Body:
+{
+  "consultationId": "consultation-guid",
+  "testName": "Complete Blood Count",
+  "priority": "Urgent",
+  "notes": "Check for infection",
+  "isConfidential": false
+}
+
+
+Step 11: Review Lab Results
+---------------------------------------------------------
+11.1 View Pending Reports
+[GET] /api/lab-reports/doctor/me?status=Completed
+
+11.2 View Report Details
+[GET] /api/lab-reports/{reportId}
+
+11.3 Download Report
+[GET] /api/lab-reports/{reportId}/download
+
+11.4 Add Review Notes
+[PUT] /api/lab-reports/{reportId}/review
+Request Body: { "notes": "Elevated WBC indicates infection. Prescribing antibiotics." }
+
+
+Step 12: Complete Appointment
+---------------------------------------------------------
+[PUT] /api/appointments/{appointmentId}/complete
+
+
+Step 13: View Dashboard
+---------------------------------------------------------
+[GET] /api/Dashboard/doctor
+
+
+
+================================================================================
+👑 ADMIN FLOW - COMPLETE JOURNEY
+================================================================================
+
+Step 1: Admin Login
+---------------------------------------------------------
+[POST] /api/auth/login
+Request Body:
+{
+  "email": "admin@hospital.com",
+  "password": "Admin@123"
+}
+
+
+Step 2: User Management
+---------------------------------------------------------
+2.1 View All Users
+[GET] /api/admin/users?pageNumber=1&pageSize=20
+
+2.2 Filter Users
+[GET] /api/admin/users?role=Doctor&isActive=true&search=smith
+
+2.3 Create User (Staff)
+[POST] /api/admin/users
+Request Body:
+{
+  "email": "newstaff@hospital.com",
+  "role": "Receptionist",
+  "phoneNumber": "+1234567890"
+}
+
+2.4 Get User Details
+[GET] /api/admin/users/{userId}
+
+2.5 Update User
+[PUT] /api/admin/users/{userId}
+Request Body: { "phoneNumber": "+1987654321", "isActive": true }
+
+2.6 Change User Role
+[PUT] /api/admin/users/{userId}/role
+Request Body: { "role": "Doctor" }
+
+2.7 Reset User Password
+[PUT] /api/admin/users/{userId}/password-reset
+Response: Returns temporary password
+
+2.8 Activate/Deactivate User
+[PUT] /api/admin/users/{userId}/activate
+[PUT] /api/admin/users/{userId}/deactivate
+
+2.9 Archive User (Soft Delete)
+[PUT] /api/admin/users/{userId}/archive
+
+2.10 Bulk Create Users
+[POST] /api/admin/users/bulk
+Request Body:
+{
+  "users": [
+    { "email": "user1@hospital.com", "role": "Doctor", "phoneNumber": "111" },
+    { "email": "user2@hospital.com", "role": "Nurse", "phoneNumber": "222" }
+  ]
+}
+
+2.11 Export Users to CSV
+[GET] /api/admin/users/export
+
+2.12 Get User Statistics
+[GET] /api/admin/users/stats
+
+2.13 View User Login History
+[GET] /api/admin/users/{userId}/login-history
+
+
+Step 3: Doctor Management
+---------------------------------------------------------
+3.1 View All Doctors
+[GET] /api/admin/doctors
+
+3.2 Create Doctor Profile
+[POST] /api/admin/doctors
+Request Body:
+{
+  "userId": "user-guid",
+  "departmentId": "dept-guid",
+  "firstName": "John",
+  "lastName": "Smith",
+  "specialization": "Neurologist",
+  "qualification": "MD, DM Neurology",
+  "experienceYears": 15,
+  "consultationFee": 2000
+}
+
+3.3 Update Doctor
+[PUT] /api/admin/doctors/{doctorId}
+
+3.4 Delete/Archive Doctor
+[DELETE] /api/admin/doctors/{doctorId}
+
+3.5 Export Doctors
+[GET] /api/admin/doctors/export
+
+3.6 Get Doctor Statistics
+[GET] /api/admin/doctors/stats
+
+
+Step 4: Leave Request Management
+---------------------------------------------------------
+4.1 View Leave Requests
+[GET] /api/admin/doctors/leave-requests?status=pending
+
+4.2 Get Leave Request Details
+[GET] /api/admin/doctors/leave-requests/{requestId}
+
+4.3 Approve Leave
+[POST] /api/admin/doctors/leave-requests/{requestId}/approve
+Request Body: { "approvedBy": "admin-guid", "notes": "Approved" }
+
+4.4 Reject Leave
+[POST] /api/admin/doctors/leave-requests/{requestId}/reject
+Request Body: { "rejectedBy": "admin-guid", "reason": "Already covered" }
+
+4.5 Cancel Leave Request
+[POST] /api/admin/doctors/leave-requests/{requestId}/cancel
+
+
+Step 5: Department Management
+---------------------------------------------------------
+5.1 View Departments
+[GET] /api/admin/departments
+
+5.2 Create Department
+[POST] /api/admin/departments
+Request Body: { "name": "Cardiology", "description": "Heart care" }
+
+5.3 Update Department
+[PUT] /api/admin/departments/{departmentId}
+
+5.4 Delete Department
+[DELETE] /api/admin/departments/{departmentId}
+
+5.5 Get Department Doctors
+[GET] /api/admin/departments/{departmentId}/doctors
+
+5.6 Get Department Statistics
+[GET] /api/admin/departments/{departmentId}/statistics
+
+5.7 Set Department Head
+[PUT] /api/admin/departments/{departmentId}/head-doctor/{doctorId}
+
+
+Step 6: Audit & Compliance
+---------------------------------------------------------
+6.1 View Audit Logs
+[GET] /api/admin/audit-logs?fromDate=2026-06-01T00:00:00Z&toDate=2026-06-30T00:00:00Z
+
+6.2 Filter Audit Logs
+[GET] /api/admin/audit-logs?userId={userId}&entityName=User&action=UPDATE
+
+6.3 Get Detailed Audit Entry
+[GET] /api/admin/audit-logs/{auditLogId}
+
+
+Step 7: Analytics & Reports
+---------------------------------------------------------
+7.1 Daily Summary
+[GET] /api/admin/daily-summary?fromDate=2026-06-01T00:00:00Z&toDate=2026-06-07T00:00:00Z
+
+7.2 Export Daily Summary
+[GET] /api/admin/daily-summary/export?format=csv
+
+7.3 Compare Two Days
+[GET] /api/admin/daily-summary/compare?date1=2026-06-01T00:00:00Z&date2=2026-06-02T00:00:00Z
+
+7.4 Admin Dashboard
+[GET] /api/Dashboard/admin
+
+7.5 Revenue Report
+[GET] /api/reports/revenue?fromDate=2026-06-01T00:00:00Z&toDate=2026-06-30T00:00:00Z
+
+7.6 Appointment Report
+[GET] /api/reports/appointments?fromDate=2026-06-01T00:00:00Z&toDate=2026-06-30T00:00:00Z
+
+
+Step 8: System Settings
+---------------------------------------------------------
+8.1 View Settings
+[GET] /api/settings
+
+8.2 Update Setting
+[PUT] /api/settings/{key}
+Request Body: { "value": "new-value" }
+
+
+
+================================================================================
+🔬 LAB TECHNICIAN FLOW
+================================================================================
+
+Step 1: Login
+---------------------------------------------------------
+[POST] /api/auth/login
+
+
+Step 2: View Pending Orders
+---------------------------------------------------------
+[GET] /api/lab-reports?status=Ordered&pageSize=50
+
+
+Step 3: Update Status
+---------------------------------------------------------
+[PUT] /api/lab-reports/{reportId}/status
+Request Body: { "status": "InProgress" }
+
+
+Step 4: Upload Report
+---------------------------------------------------------
+[PUT] /api/lab-reports/{reportId}/upload
+Content-Type: multipart/form-data
+
+
+Step 5: Add Observations
+---------------------------------------------------------
+[PUT] /api/lab-reports/{reportId}/review
+Request Body: { "notes": "Specimen quality good" }
+
+
+Step 6: Mark Complete
+---------------------------------------------------------
+[PUT] /api/lab-reports/{reportId}/status
+Request Body: { "status": "Completed" }
+
+
+Step 7: View Statistics
+---------------------------------------------------------
+[GET] /api/lab-reports/statistics
+
+
+
+================================================================================
+🏥 RECEPTIONIST FLOW
+================================================================================
+
+Step 1: Login
+---------------------------------------------------------
+[POST] /api/auth/login
+
+
+Step 2: Book Appointment (for walk-in)
+---------------------------------------------------------
+[POST] /api/appointments
+
+
+Step 3: Check-in Patient
+---------------------------------------------------------
+[PUT] /api/appointments/{appointmentId}/check-in
+
+
+Step 4: View Queue
+---------------------------------------------------------
+[GET] /api/Queue/doctor/{doctorId}
+
+
+Step 5: View Display Board
+---------------------------------------------------------
+[GET] /api/Queue/display/{doctorId}
+
+
+Step 6: Mark No-Show
+---------------------------------------------------------
+[PUT] /api/Queue/{queueEntryId}/no-show

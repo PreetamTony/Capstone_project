@@ -10,4 +10,5 @@ public class BookAppointmentRequestDto
     public string Reason { get; set; } = string.Empty;
     public List<string>? Symptoms { get; set; }
     public AppointmentPriority Priority { get; set; } = AppointmentPriority.Medium;
+    public Guid PatientId { get; set; }
 }

@@ -1,4 +1,5 @@
 using HospitalManagement.DataAccess.Models.Enums;
+using HospitalManagement.DataAccess.Models.Billing;
 
 namespace HospitalManagement.DataAccess.Models;
 
@@ -16,6 +17,8 @@ public class Patient : BaseEntity
     public string? Address { get; set; }
     public string EmergencyContactName { get; set; } = string.Empty;
     public string EmergencyContactPhone { get; set; } = string.Empty;
+    public string? EmergencyContactRelationship { get; set; }
+    public bool OrganDonorFlag { get; set; } = false;
     public string? InsuranceProvider { get; set; }
     public string? InsurancePolicyNumber { get; set; }
     public decimal InsuranceCoveragePercent { get; set; } = 0;
@@ -28,7 +31,7 @@ public class Patient : BaseEntity
     public ICollection<Visit> Visits { get; set; } = new List<Visit>();
     public ICollection<Prescription> Prescriptions { get; set; } = new List<Prescription>();
     public ICollection<LabReport> LabReports { get; set; } = new List<LabReport>();
-    public ICollection<Billing> Bills { get; set; } = new List<Billing>();
+    public ICollection<Invoice> Invoices { get; set; } = new List<Invoice>();
     public ICollection<PatientConsent> Consents { get; set; } = new List<PatientConsent>();
     public Emr.EmrRecord? EmrRecord { get; set; } // Added EMR Record
 

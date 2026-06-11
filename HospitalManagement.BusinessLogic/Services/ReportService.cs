@@ -15,12 +15,12 @@ public class ReportService : IReportService
 
     public async Task<object> GetRevenueReportAsync(DateTime startDate, DateTime endDate, CancellationToken ct = default)
     {
-        var bills = await _uow.Bills.Query()
+        var bills = await _uow.Invoices.Query()
             .Where(b => b.CreatedAt >= startDate && b.CreatedAt <= endDate)
             .ToListAsync(ct);
 
-        var totalRevenue = bills.Sum(b => b.Amount);
-        var totalPaid = bills.Where(b => b.Status == HospitalManagement.DataAccess.Models.Enums.BillingStatus.Paid).Sum(b => b.Amount);
+        var totalRevenue = bills.Sum(b => b.TotalAmount);
+        var totalPaid = bills.Where(b => b.Status == HospitalManagement.DataAccess.Models.Enums.Billing.InvoiceStatus.Paid).Sum(b => b.TotalAmount);
         
         return new
         {

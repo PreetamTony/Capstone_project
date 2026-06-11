@@ -1,217 +1,339 @@
 using HospitalManagement.BusinessLogic.DTOs.Common;
 using HospitalManagement.BusinessLogic.DTOs.Prescription;
-using HospitalManagement.DataAccess.Constants;
-using HospitalManagement.DataAccess.Models;
+using HospitalManagement.BusinessLogic.Services.Interfaces;
 using HospitalManagement.DataAccess.Exceptions;
-using HospitalManagement.DataAccess.Repositories;
+using HospitalManagement.DataAccess.Models;
+using HospitalManagement.DataAccess.Models.Emr;
 using HospitalManagement.DataAccess.Models.Enums;
+using HospitalManagement.DataAccess.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace HospitalManagement.BusinessLogic.Services;
 
-/// <summary>
-/// Manages prescriptions with enforced 30-minute edit window and no-delete (void only) policy.
-/// </summary>
 public class PrescriptionService : IPrescriptionService
 {
     private readonly IUnitOfWork _uow;
-
     private readonly ILogger<PrescriptionService> _logger;
+    private readonly INotificationService _notificationService;
 
-    public PrescriptionService(IUnitOfWork uow, ILogger<PrescriptionService> logger)
+    public PrescriptionService(IUnitOfWork uow, ILogger<PrescriptionService> logger, INotificationService notificationService)
     {
         _uow = uow;
         _logger = logger;
+        _notificationService = notificationService;
     }
 
-    /// <inheritdoc/>
-    public async Task<PrescriptionResponseDto> CreatePrescriptionAsync(
-        Guid doctorUserId, CreatePrescriptionRequestDto request, CancellationToken ct = default)
+    public async Task<PrescriptionResponseDto> CreatePrescriptionAsync(Guid doctorUserId, CreatePrescriptionRequestDto request, CancellationToken ct = default)
     {
         var doctor = await _uow.Doctors.FirstOrDefaultAsync(d => d.UserId == doctorUserId, ct)
             ?? throw new NotFoundException("Doctor profile not found.");
 
-        var visit = await _uow.Visits.Query()
-            .Include(v => v.Patient)
-            .FirstOrDefaultAsync(v => v.Id == request.VisitId, ct)
-            ?? throw new NotFoundException("Visit", request.VisitId);
+        var consultation = await _uow.Consultations.Query()
+            .Include(c => c.Visit)
+            .FirstOrDefaultAsync(c => c.Id == request.ConsultationId, ct)
+            ?? throw new NotFoundException("Consultation", request.ConsultationId);
 
-        // Doctor must own this visit
-        if (visit.DoctorId != doctor.Id)
-            throw new HospitalManagement.DataAccess.Exceptions.UnauthorizedAccessException(
-                "You can only prescribe for visits assigned to you.");
+        if (consultation.DoctorId != doctor.Id)
+            throw new HospitalManagement.DataAccess.Exceptions.UnauthorizedAccessException("Only the consultation doctor can create a prescription.");
 
-        if (visit.Status != VisitStatus.InProgress &&
-            visit.Status != VisitStatus.Discharged)
-            throw new BusinessRuleViolationException("InvalidStatus",
-                "Prescriptions can only be created for InProgress or Discharged visits.");
+        if (consultation.Status == ConsultationStatus.Cancelled)
+            throw new BusinessRuleViolationException("InvalidStatus", "Cannot create prescriptions for cancelled consultations.");
 
-        var now = DateTime.UtcNow;
         var prescription = new Prescription
         {
-            VisitId = visit.Id,
+            ConsultationId = consultation.Id,
             DoctorId = doctor.Id,
-            PatientId = visit.PatientId,
-            MedicationName = request.MedicationName,
-            Dosage = request.Dosage,
-            Frequency = request.Frequency,
-            DurationDays = request.DurationDays,
-            Instructions = request.Instructions,
-            CreatedAt = now,
-            EditableUntil = now.AddMinutes(AppConstants.Prescription.EditWindowMinutes)
+            PatientId = consultation.Visit!.PatientId,
+            Status = PrescriptionStatus.Draft,
+            Notes = request.Notes
         };
 
         await _uow.Prescriptions.AddAsync(prescription, ct);
         await _uow.CompleteAsync(ct);
 
-
-        _logger.LogInformation("Prescription {Id} created by Doctor {DoctorId} for Patient {PatientId}",
-            prescription.Id, doctor.Id, visit.PatientId);
-
-        return MapToDto(prescription, doctor, visit.Patient);
+        return await GetByIdAsync(prescription.Id, ct);
     }
 
-    /// <inheritdoc/>
-    public async Task<PrescriptionResponseDto> UpdatePrescriptionAsync(
-        Guid prescriptionId, Guid doctorUserId, UpdatePrescriptionRequestDto request, CancellationToken ct = default)
+    public async Task<PrescriptionItemDto> AddMedicationItemAsync(Guid prescriptionId, Guid doctorUserId, AddMedicationItemRequestDto request, CancellationToken ct = default)
     {
-        var doctor = await _uow.Doctors.FirstOrDefaultAsync(d => d.UserId == doctorUserId, ct)
-            ?? throw new NotFoundException("Doctor profile not found.");
+        var prescription = await GetPrescriptionForEditAsync(prescriptionId, doctorUserId, ct);
 
-        var prescription = await GetWithNavigationAsync(prescriptionId, ct);
+        var patientEmr = await _uow.EmrRecords.GetByPatientIdWithDetailsAsync(prescription.PatientId, ct);
+        var patientAllergies = patientEmr?.Allergies ?? new HashSet<Allergy>();
 
-        if (prescription.DoctorId != doctor.Id)
-            throw new HospitalManagement.DataAccess.Exceptions.UnauthorizedAccessException("You can only edit your own prescriptions.");
+        if (patientAllergies.Any(a => a.Substance.Contains(request.MedicationName, StringComparison.OrdinalIgnoreCase) || 
+                                      request.MedicationName.Contains(a.Substance, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new BusinessRuleViolationException("AllergyConflictDetected", $"Patient has a known allergy conflicting with {request.MedicationName}. Addition blocked for safety.");
+        }
 
-        if (!prescription.IsEditable)
-            throw new BusinessRuleViolationException("EditWindowExpired",
-                $"Prescriptions can only be edited within {AppConstants.Prescription.EditWindowMinutes} minutes of creation.");
+        var item = new PrescriptionItem
+        {
+            PrescriptionId = prescription.Id,
+            MedicationName = request.MedicationName,
+            Strength = request.Strength,
+            Dosage = request.Dosage,
+            Frequency = request.Frequency,
+            DurationDays = request.DurationDays,
+            Instructions = request.Instructions,
+            Quantity = request.Quantity
+        };
 
-        var old = new { prescription.MedicationName, prescription.Dosage, prescription.Frequency, prescription.DurationDays };
+        await _uow.PrescriptionItems.AddAsync(item, ct);
+        await _uow.CompleteAsync(ct);
 
-        if (request.MedicationName != null) prescription.MedicationName = request.MedicationName;
-        if (request.Dosage != null) prescription.Dosage = request.Dosage;
-        if (request.Frequency != null) prescription.Frequency = request.Frequency;
-        if (request.DurationDays.HasValue) prescription.DurationDays = request.DurationDays.Value;
-        if (request.Instructions != null) prescription.Instructions = request.Instructions;
+        return MapToItemDto(item);
+    }
+
+    public async Task<PrescriptionItemDto> UpdateMedicationItemAsync(Guid itemId, Guid doctorUserId, UpdateMedicationItemRequestDto request, CancellationToken ct = default)
+    {
+        var item = await _uow.PrescriptionItems.Query()
+            .Include(i => i.Prescription)
+            .FirstOrDefaultAsync(i => i.Id == itemId, ct)
+            ?? throw new NotFoundException("PrescriptionItem", itemId);
+
+        await GetPrescriptionForEditAsync(item.PrescriptionId, doctorUserId, ct);
+
+        item.MedicationName = request.MedicationName;
+        item.Strength = request.Strength;
+        item.Dosage = request.Dosage;
+        item.Frequency = request.Frequency;
+        item.DurationDays = request.DurationDays;
+        item.Instructions = request.Instructions;
+        item.Quantity = request.Quantity;
+
+        _uow.PrescriptionItems.Update(item);
+        await _uow.CompleteAsync(ct);
+
+        return MapToItemDto(item);
+    }
+
+    public async Task DeleteMedicationItemAsync(Guid itemId, Guid doctorUserId, CancellationToken ct = default)
+    {
+        var item = await _uow.PrescriptionItems.Query()
+            .Include(i => i.Prescription)
+            .FirstOrDefaultAsync(i => i.Id == itemId, ct)
+            ?? throw new NotFoundException("PrescriptionItem", itemId);
+
+        await GetPrescriptionForEditAsync(item.PrescriptionId, doctorUserId, ct);
+
+        _uow.PrescriptionItems.Delete(item);
+        await _uow.CompleteAsync(ct);
+    }
+
+    public async Task<PrescriptionResponseDto> FinalizePrescriptionAsync(Guid prescriptionId, Guid doctorUserId, CancellationToken ct = default)
+    {
+        var prescription = await GetPrescriptionForEditAsync(prescriptionId, doctorUserId, ct);
+
+        if (prescription.Items.Count == 0)
+            throw new BusinessRuleViolationException("EmptyPrescription", "Prescription must contain at least one medication item before finalization.");
+
+        prescription.Status = PrescriptionStatus.Active;
+        prescription.FinalizedAt = DateTime.UtcNow;
+        prescription.ExpiresAt = DateTime.UtcNow.AddDays(30);
 
         _uow.Prescriptions.Update(prescription);
         await _uow.CompleteAsync(ct);
 
+        await _notificationService.NotifyPrescriptionCreatedAsync(prescription.PatientId, prescription.Id, ct);
 
-        return MapToDto(prescription, prescription.Doctor, prescription.Patient);
+        return await GetByIdAsync(prescription.Id, ct);
     }
 
-    /// <inheritdoc/>
-    public async Task<PrescriptionResponseDto> VoidPrescriptionAsync(
-        Guid prescriptionId, Guid doctorUserId, VoidPrescriptionRequestDto request, CancellationToken ct = default)
+    public async Task<PrescriptionResponseDto> DispensePrescriptionAsync(Guid prescriptionId, Guid pharmacistUserId, CancellationToken ct = default)
     {
-        var doctor = await _uow.Doctors.FirstOrDefaultAsync(d => d.UserId == doctorUserId, ct)
-            ?? throw new NotFoundException("Doctor profile not found.");
+        var prescription = await _uow.Prescriptions.Query()
+            .Include(p => p.Items)
+            .FirstOrDefaultAsync(p => p.Id == prescriptionId, ct)
+            ?? throw new NotFoundException("Prescription", prescriptionId);
 
-        var prescription = await GetWithNavigationAsync(prescriptionId, ct);
+        if (prescription.Status == PrescriptionStatus.Cancelled)
+            throw new BusinessRuleViolationException("InvalidStatus", "Cannot dispense a voided prescription.");
+            
+        if (prescription.Status == PrescriptionStatus.Expired || (prescription.ExpiresAt.HasValue && prescription.ExpiresAt.Value < DateTime.UtcNow))
+            throw new BusinessRuleViolationException("Expired", "Cannot dispense an expired prescription.");
 
-        if (prescription.DoctorId != doctor.Id)
-            throw new HospitalManagement.DataAccess.Exceptions.UnauthorizedAccessException("You can only void your own prescriptions.");
+        if (prescription.Status != PrescriptionStatus.Active && prescription.Status != PrescriptionStatus.PartiallyDispensed)
+            throw new BusinessRuleViolationException("InvalidStatus", "Prescription is not active for dispensation.");
 
-        if (prescription.IsVoided)
-            throw new BusinessRuleViolationException("AlreadyVoided", "This prescription is already voided.");
-
-        prescription.IsVoided = true;
-        prescription.VoidReason = request.Reason;
-
-        _uow.Prescriptions.Update(prescription);
-        await _uow.CompleteAsync(ct);
-
-
-        return MapToDto(prescription, prescription.Doctor, prescription.Patient);
-    }
-
-    /// <inheritdoc/>
-    public async Task<PrescriptionResponseDto> MarkDispensedAsync(
-        Guid prescriptionId, Guid pharmacistUserId, CancellationToken ct = default)
-    {
-        var prescription = await GetWithNavigationAsync(prescriptionId, ct);
-
-        if (prescription.IsVoided)
-            throw new BusinessRuleViolationException("VoidedPrescription", "Cannot dispense a voided prescription.");
-
-        if (prescription.IsDispensed)
-            throw new BusinessRuleViolationException("AlreadyDispensed", "This prescription has already been dispensed.");
-
-        prescription.IsDispensed = true;
-        prescription.DispensedBy = pharmacistUserId;
+        prescription.Status = PrescriptionStatus.Dispensed;
         prescription.DispensedAt = DateTime.UtcNow;
 
+        foreach(var item in prescription.Items)
+        {
+            item.IsDispensed = true;
+            _uow.PrescriptionItems.Update(item);
+        }
+
         _uow.Prescriptions.Update(prescription);
         await _uow.CompleteAsync(ct);
 
-
-        return MapToDto(prescription, prescription.Doctor, prescription.Patient);
+        return await GetByIdAsync(prescription.Id, ct);
     }
 
-    /// <inheritdoc/>
-    public async Task<PagedResult<PrescriptionResponseDto>> GetPatientPrescriptionsAsync(
-        Guid patientId, PaginationFilter filter, CancellationToken ct = default)
+    public async Task<PrescriptionResponseDto> VoidPrescriptionAsync(Guid prescriptionId, Guid doctorUserId, VoidPrescriptionRequestDto request, CancellationToken ct = default)
     {
-        var query = _uow.Prescriptions.Query()
-            .Where(p => p.PatientId == patientId)
-            .Include(p => p.Doctor).ThenInclude(d => d.User)
-            .Include(p => p.Patient).ThenInclude(pt => pt.User)
-            .AsQueryable();
+        var doctor = await _uow.Doctors.FirstOrDefaultAsync(d => d.UserId == doctorUserId, ct)
+            ?? throw new NotFoundException("Doctor profile not found.");
 
-        if (!string.IsNullOrWhiteSpace(filter.SearchTerm))
-            query = query.Where(p => p.MedicationName.Contains(filter.SearchTerm));
+        var prescription = await _uow.Prescriptions.GetByIdAsync(prescriptionId, ct)
+            ?? throw new NotFoundException("Prescription", prescriptionId);
 
-        var total = await query.CountAsync(ct);
-        var items = await query
-            .OrderByDescending(p => p.CreatedAt)
-            .Skip((filter.PageNumber - 1) * filter.PageSize)
-            .Take(filter.PageSize)
-            .ToListAsync(ct);
+        if (prescription.DoctorId != doctor.Id)
+            throw new HospitalManagement.DataAccess.Exceptions.UnauthorizedAccessException("Only the issuing doctor can void this prescription.");
 
-        return PagedResult<PrescriptionResponseDto>.Create(
-            items.Select(p => MapToDto(p, p.Doctor, p.Patient)).ToList(),
-            total, filter.PageNumber, filter.PageSize);
+        if (prescription.Status == PrescriptionStatus.Dispensed || prescription.Status == PrescriptionStatus.PartiallyDispensed)
+            throw new BusinessRuleViolationException("InvalidStatus", "Dispensed prescriptions cannot be voided.");
+
+        prescription.Status = PrescriptionStatus.Cancelled;
+        prescription.Notes = $"[VOIDED: {request.Reason}] " + prescription.Notes;
+
+        _uow.Prescriptions.Update(prescription);
+        await _uow.CompleteAsync(ct);
+
+        return await GetByIdAsync(prescription.Id, ct);
     }
 
-    /// <inheritdoc/>
     public async Task<PrescriptionResponseDto> GetByIdAsync(Guid prescriptionId, CancellationToken ct = default)
     {
-        var prescription = await GetWithNavigationAsync(prescriptionId, ct);
-        return MapToDto(prescription, prescription.Doctor, prescription.Patient);
+        var prescription = await _uow.Prescriptions.Query()
+            .Include(p => p.Patient)
+            .Include(p => p.Doctor)
+            .Include(p => p.Items)
+            .FirstOrDefaultAsync(p => p.Id == prescriptionId, ct)
+            ?? throw new NotFoundException("Prescription", prescriptionId);
+
+        return MapToResponseDto(prescription);
     }
 
-    // ── Private helpers ──────────────────────────────────────────────────────
+    public async Task<List<PrescriptionSummaryDto>> GetByConsultationAsync(Guid consultationId, CancellationToken ct = default)
+    {
+        var prescriptions = await _uow.Prescriptions.Query()
+            .Include(p => p.Patient)
+            .Include(p => p.Doctor)
+            .Include(p => p.Items)
+            .Where(p => p.ConsultationId == consultationId)
+            .ToListAsync(ct);
 
-    private async Task<Prescription> GetWithNavigationAsync(Guid id, CancellationToken ct)
-        => await _uow.Prescriptions.Query()
-               .Include(p => p.Doctor).ThenInclude(d => d.User)
-               .Include(p => p.Patient).ThenInclude(pt => pt.User)
-               .FirstOrDefaultAsync(p => p.Id == id, ct)
-           ?? throw new NotFoundException("Prescription", id);
+        return prescriptions.Select(MapToSummaryDto).ToList();
+    }
 
-    private static PrescriptionResponseDto MapToDto(Prescription p, Doctor d, Patient pt)
-        => new()
+    public async Task<PagedResult<PrescriptionSummaryDto>> GetPatientPrescriptionsAsync(Guid patientUserId, PaginationFilter filter, CancellationToken ct = default)
+    {
+        var patient = await _uow.Patients.Query().FirstOrDefaultAsync(p => p.UserId == patientUserId, ct)
+            ?? throw new NotFoundException("Patient account not found.");
+
+        var query = _uow.Prescriptions.Query()
+            .Include(p => p.Patient)
+            .Include(p => p.Doctor)
+            .Include(p => p.Items)
+            .Where(p => p.PatientId == patient.Id)
+            .OrderByDescending(p => p.CreatedAt)
+            .AsQueryable();
+
+        var total = await query.CountAsync(ct);
+        var items = await query.Skip((filter.PageNumber - 1) * filter.PageSize).Take(filter.PageSize).ToListAsync(ct);
+
+        return new PagedResult<PrescriptionSummaryDto>
+        {
+            Items = items.Select(MapToSummaryDto).ToList(),
+            TotalCount = total,
+            PageNumber = filter.PageNumber,
+            PageSize = filter.PageSize
+        };
+    }
+
+    public async Task<PagedResult<PrescriptionSummaryDto>> GetDoctorPrescriptionsAsync(Guid doctorUserId, PaginationFilter filter, CancellationToken ct = default)
+    {
+        var doctor = await _uow.Doctors.Query().FirstOrDefaultAsync(d => d.UserId == doctorUserId, ct)
+            ?? throw new NotFoundException("Doctor account not found.");
+
+        var query = _uow.Prescriptions.Query()
+            .Include(p => p.Patient)
+            .Include(p => p.Doctor)
+            .Include(p => p.Items)
+            .Where(p => p.DoctorId == doctor.Id)
+            .OrderByDescending(p => p.CreatedAt)
+            .AsQueryable();
+
+        var total = await query.CountAsync(ct);
+        var items = await query.Skip((filter.PageNumber - 1) * filter.PageSize).Take(filter.PageSize).ToListAsync(ct);
+
+        return new PagedResult<PrescriptionSummaryDto>
+        {
+            Items = items.Select(MapToSummaryDto).ToList(),
+            TotalCount = total,
+            PageNumber = filter.PageNumber,
+            PageSize = filter.PageSize
+        };
+    }
+
+    private async Task<Prescription> GetPrescriptionForEditAsync(Guid prescriptionId, Guid doctorUserId, CancellationToken ct)
+    {
+        var doctor = await _uow.Doctors.FirstOrDefaultAsync(d => d.UserId == doctorUserId, ct)
+            ?? throw new NotFoundException("Doctor profile not found.");
+
+        var prescription = await _uow.Prescriptions.Query()
+            .Include(p => p.Items)
+            .FirstOrDefaultAsync(p => p.Id == prescriptionId, ct)
+            ?? throw new NotFoundException("Prescription", prescriptionId);
+
+        if (prescription.DoctorId != doctor.Id)
+            throw new HospitalManagement.DataAccess.Exceptions.UnauthorizedAccessException("Only the issuing doctor can modify this prescription.");
+
+        if (prescription.Status != PrescriptionStatus.Draft)
+            throw new BusinessRuleViolationException("InvalidStatus", "Prescription cannot be modified once it is finalized, dispensed, or cancelled.");
+
+        return prescription;
+    }
+
+    private static PrescriptionResponseDto MapToResponseDto(Prescription p)
+    {
+        return new PrescriptionResponseDto
         {
             Id = p.Id,
-            VisitId = p.VisitId,
-            DoctorId = d.Id,
-            DoctorName = $"Dr. {d.FirstName} {d.LastName}",
-            PatientId = pt.Id,
-            PatientName = $"{pt.FirstName} {pt.LastName}",
-            MedicationName = p.MedicationName,
-            Dosage = p.Dosage,
-            Frequency = p.Frequency,
-            DurationDays = p.DurationDays,
-            Instructions = p.Instructions,
-            IsDispensed = p.IsDispensed,
+            ConsultationId = p.ConsultationId,
+            Patient = new BasicUserDto { Id = p.PatientId, Name = $"{p.Patient.FirstName} {p.Patient.LastName}" },
+            Doctor = new BasicUserDto { Id = p.DoctorId, Name = $"Dr. {p.Doctor.FirstName} {p.Doctor.LastName}" },
+            Status = p.Status.ToString(),
+            CreatedAt = p.CreatedAt,
+            FinalizedAt = p.FinalizedAt,
             DispensedAt = p.DispensedAt,
-            IsVoided = p.IsVoided,
-            VoidReason = p.VoidReason,
-            IsEditable = p.IsEditable,
-            EditableUntil = p.EditableUntil,
-            CreatedAt = p.CreatedAt
+            ExpiresAt = p.ExpiresAt,
+            Notes = p.Notes,
+            Items = p.Items.Select(MapToItemDto).ToList()
         };
+    }
+
+    private static PrescriptionSummaryDto MapToSummaryDto(Prescription p)
+    {
+        return new PrescriptionSummaryDto
+        {
+            Id = p.Id,
+            ConsultationId = p.ConsultationId,
+            Patient = new BasicUserDto { Id = p.PatientId, Name = $"{p.Patient.FirstName} {p.Patient.LastName}" },
+            Doctor = new BasicUserDto { Id = p.DoctorId, Name = $"Dr. {p.Doctor.FirstName} {p.Doctor.LastName}" },
+            Status = p.Status.ToString(),
+            CreatedAt = p.CreatedAt,
+            ExpiresAt = p.ExpiresAt,
+            ItemCount = p.Items.Count
+        };
+    }
+
+    private static PrescriptionItemDto MapToItemDto(PrescriptionItem i)
+    {
+        return new PrescriptionItemDto
+        {
+            Id = i.Id,
+            MedicationName = i.MedicationName,
+            Strength = i.Strength,
+            Dosage = i.Dosage,
+            Frequency = i.Frequency,
+            DurationDays = i.DurationDays,
+            Instructions = i.Instructions,
+            Quantity = i.Quantity,
+            IsDispensed = i.IsDispensed
+        };
+    }
 }

@@ -23,4 +23,6 @@ public class QueueEntry : BaseEntity
     public DateTime? ConsultationEndedAt { get; set; }
 
     public Guid? CalledBy { get; set; }
+    
+    public int CallCount { get; set; } = 0;
 }
